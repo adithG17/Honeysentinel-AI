@@ -2,11 +2,13 @@ from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from typing import Optional
 
-from app.services.message_analyzer import analyze_message
-from app.services.email_analyzer import analyze_email
-from app.services.image_analyzer import analyze_image
-from app.services.audio_analyzer import analyze_audio
-from app.services.video_analyzer import analyze_video
+from backend.app.services.message_analyzer import analyze_message
+from backend.app.services.email_analyzer import analyze_email
+from backend.app.services.image_analyzer import analyze_image
+from backend.app.services.audio_analyzer import analyze_audio
+from backend.app.services.video_analyzer import analyze_video
+from backend.app.services.gmail_reader import fetch_gmail_messages
+
 
 router = APIRouter()
 
@@ -19,6 +21,15 @@ class EmailInput(BaseModel):
 @router.get("/")
 def analyze_root():
     return {"message": "Welcome to HoneyBadger AI Analyzer!"}
+
+@router.get("/analyze/gmail")
+def analyze_gmail():
+    try:
+        emails = fetch_gmail_messages()
+        return {"emails": emails}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/analyze/message")
 def analyze_message_route(input: MessageInput):
