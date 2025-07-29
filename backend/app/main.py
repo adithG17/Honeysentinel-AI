@@ -1,7 +1,7 @@
 # backend/app/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import analyze
+from backend.app.routes import analyze
 
 app = FastAPI(
     title="HoneySentinel AI",
@@ -9,7 +9,6 @@ app = FastAPI(
     version="1.0.0"
 )
 
-app.include_router(analyze.router)
 
 # Allow frontend (if built) or Postman/Curl
 app.add_middleware(
@@ -20,8 +19,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(analyze.router)
+
 @app.get("/")
 async def root():
     return {"message": "HoneySentinel AI is alive!"}
 
-__all__ = ["router"]
+#__all__ = ["router"]
