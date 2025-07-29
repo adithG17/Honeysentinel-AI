@@ -1,7 +1,8 @@
 # backend/app/main.py
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import analyze
+from backend.app.routes import analyze  # ✅ updated import
 
 app = FastAPI(
     title="HoneySentinel AI",
@@ -25,3 +26,4 @@ async def root():
     return {"message": "HoneySentinel AI is alive!"}
 
 __all__ = ["router"]
+
