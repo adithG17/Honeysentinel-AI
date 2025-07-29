@@ -14,49 +14,81 @@ from app.services.video_analyzer import analyze_video
 
 router = APIRouter()
 
+
+# ==== Request Models ====
 class MessageInput(BaseModel):
     message: str
 
+
 class EmailInput(BaseModel):
     content: str
+
+
+# ==== Routes ====
 
 @router.get("/")
 def analyze_root():
     return {"message": "Welcome to HoneyBadger AI Analyzer!"}
 
+
 @router.post("/analyze/message")
 def analyze_message_route(input: MessageInput):
-    score = analyze_message(input.message)
-    return {"risk_score": score}
+    try:
+        result = analyze_message(input.message)
+        return {"status": "success", "type": "message", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/analyze/email")
 def analyze_email_route(input: EmailInput):
-    score = analyze_email(input.content)
-    return {"risk_score": score}
+    try:
+        result = analyze_email(input.content)
+        return {"status": "success", "type": "email", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/analyze/image")
 async def analyze_image_route(file: UploadFile = File(...)):
-    file_path = f"temp/{file.filename}"
-    with open(file_path, "wb") as f:
-        content = await file.read()
-        f.write(content)
-    score = analyze_image(file_path)
-    return {"risk_score": score}
+    try:
+        os.makedirs("temp", exist_ok=True)
+        file_path = f"temp/{file.filename}"
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        result = analyze_image(file_path)
+        return {"status": "success", "type": "image", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/analyze/audio")
 async def analyze_audio_route(file: UploadFile = File(...)):
-    file_path = f"temp/{file.filename}"
-    with open(file_path, "wb") as f:
-        content = await file.read()
-        f.write(content)
-    score = analyze_audio(file_path)
-    return {"risk_score": score}
+    try:
+        os.makedirs("temp", exist_ok=True)
+        file_path = f"temp/{file.filename}"
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        result = analyze_audio(file_path)
+        return {"status": "success", "type": "audio", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/analyze/video")
 async def analyze_video_route(file: UploadFile = File(...)):
-    file_path = f"temp/{file.filename}"
-    with open(file_path, "wb") as f:
-        content = await file.read()
-        f.write(content)
-    score = analyze_video(file_path)
-    return {"risk_score": score}
+    try:
+        os.makedirs("temp", exist_ok=True)
+        file_path = f"temp/{file.filename}"
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+        result = analyze_video(file_path)
+        return {"status": "success", "type": "video", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
