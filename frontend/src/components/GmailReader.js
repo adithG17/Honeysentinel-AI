@@ -21,17 +21,24 @@ function GmailReader() {
     <div>
       <h2>📬 Latest Gmail Snippets</h2>
       {error && <p style={{ color: "red" }}>{error}</p>}
-      <ul>
-        {emails.length > 0 ? (
-          emails.map((email, idx) => (
-            <li key={idx} style={{ marginBottom: "10px" }}>
-              {email}
-            </li>
-          ))
-        ) : (
-          <p>Loading emails...</p>
-        )}
-      </ul>
+      {emails.length > 0 ? (
+        emails.map((email, idx) => (
+          <div
+            key={idx}
+            dangerouslySetInnerHTML={{ __html: email.html }}
+            style={{
+              border: "1px solid #ccc",
+              margin: "10px 0",
+              padding: "10px",
+              background: "#fff",
+              borderRadius: "6px",
+              overflowX: "auto",
+            }}
+          />
+        ))
+      ) : (
+        <p>Loading emails...</p>
+      )}
     </div>
   );
 }
