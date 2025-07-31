@@ -10,7 +10,6 @@ function App() {
     <div className="App">
       <h1>🐝 HoneySentinel AI</h1>
       <GmailReader />
-      <p>⬆ GmailReader should appear above this ⬆</p>
       <MessageAnalyzer />
       <EmailAnalyzer />
       <FileAnalyzer type="image" />
