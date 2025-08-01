@@ -1,18 +1,38 @@
-.App {
-  font-family: sans-serif;
-  text-align: center;
+.app-container {
+  display: flex;
+  height: 100vh;
+  font-family: Arial, sans-serif;
+}
+
+.sidebar {
+  width: 250px;
+  background-color: #f4f4f4;
   padding: 20px;
+  border-right: 1px solid #ccc;
 }
 
-input,
-textarea {
-  width: 60%;
-  margin: 10px;
-  padding: 8px;
+.sidebar h2 {
+  margin-bottom: 30px;
 }
 
-button {
-  padding: 10px 20px;
-  margin: 10px;
+.sidebar ul {
+  list-style: none;
+  padding: 0;
+}
+
+.sidebar ul li {
+  padding: 12px 10px;
+  margin-bottom: 10px;
   cursor: pointer;
+  border-radius: 6px;
+}
+
+.sidebar ul li:hover {
+  background-color: #ddd;
+}
+
+.content {
+  flex: 1;
+  padding: 30px;
+  overflow-y: auto;
 }
