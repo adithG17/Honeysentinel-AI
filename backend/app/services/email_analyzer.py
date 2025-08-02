@@ -39,18 +39,22 @@ def extract_email_content(raw_bytes: bytes) -> dict:
 
 
 
-def analyze_email(file_path: str) -> float:
-    with open(file_path, "rb") as f:
+def extract_email_metadata(file_path: str):
+    with open(file_path, 'rb') as f:
         msg = BytesParser(policy=policy.default).parse(f)
 
-    body = ""
-    if msg.is_multipart():
-        for part in msg.walk():
-            if part.get_content_type() == "text/plain":
-                body += part.get_content()
-    else:
-        body = msg.get_content()
+    metadata = {
+        "from": msg["from"],
+        "to": msg["to"],
+        "subject": msg["subject"],
+        "date": msg["date"],
+        "body": msg.get_body(preferencelist=('html', 'plain')).get_content()
+    }
 
-    if "click here" in body.lower() or "urgent" in body.lower():
+    return metadata
+
+def analyze_email_html(content: str) -> float:
+    """Basic heuristic analyzer for email HTML content."""
+    if "click here" in content.lower() or "urgent" in content.lower():
         return 0.85
     return 0.2

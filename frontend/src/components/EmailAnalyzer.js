@@ -2,21 +2,15 @@ import React, { useState } from "react";
 
 function EmailAnalyzer() {
   const [file, setFile] = useState(null);
-  const [result, setResult] = useState(null);
+  const [emailData, setEmailData] = useState(null);
   const [error, setError] = useState("");
 
-  const handleFileChange = (e) => {
-    setFile(e.target.files[0]);
-    setError("");
-    setResult(null);
-  };
-
-  const handleAnalyze = async () => {
+  const analyze = async () => {
     if (!file) {
-      setError("Please upload a .eml or .msg file first.");
+      setError("Please choose a file.");
       return;
     }
-
+    setError("");
     const formData = new FormData();
     formData.append("file", file);
 
@@ -26,16 +20,13 @@ function EmailAnalyzer() {
         body: formData,
       });
 
-      if (!res.ok) {
-        const errData = await res.json();
-        setError("Failed to analyze email: " + JSON.stringify(errData));
-        return;
-      }
+      if (!res.ok) throw new Error("Failed to analyze");
 
       const data = await res.json();
-      setResult(data);
+      setEmailData(data);
     } catch (err) {
-      setError("An error occurred while analyzing the email.");
+      setError("Failed to analyze email.");
+      console.error(err);
     }
   };
 
@@ -43,22 +34,38 @@ function EmailAnalyzer() {
     <div>
       <h2>📧 Email Analyzer</h2>
       <p>
-        Upload a `.eml` or `.msg` file to analyze its content and detect honeytrap risks.
-        <br />
-        <strong>How to download a .eml file:</strong> Open an email in your email app or webmail → More Options → Download (.eml).
+        Upload a <code>.eml</code> or <code>.msg</code> file to analyze its
+        content and detect honeytrap risks. <br />
+        <strong>How to download a .eml file:</strong> Open an email in your
+        email app or webmail → More Options → Download (.eml).
       </p>
 
-      <input type="file" accept=".eml,.msg" onChange={handleFileChange} />
-      <br />
-      <button onClick={handleAnalyze} style={{ marginTop: "10px" }}>
-        Analyze Email
-      </button>
+      <input type="file" onChange={(e) => setFile(e.target.files[0])} />
+      <button onClick={analyze}>Analyze Email</button>
 
       {error && <p style={{ color: "red" }}>{error}</p>}
-      {result && (
-        <div style={{ marginTop: "10px" }}>
-          <strong>Result:</strong>
-          <pre>{JSON.stringify(result, null, 2)}</pre>
+
+      {emailData && (
+        <div style={{ marginTop: "20px" }}>
+          <h4>📨 Preview</h4>
+          <p>
+            <strong>From:</strong> {emailData.from}
+            <br />
+            <strong>To:</strong> {emailData.to}
+            <br />
+            <strong>Subject:</strong> {emailData.subject}
+            <br />
+            <strong>Date:</strong> {emailData.date}
+          </p>
+
+          <h4>🧠 Risk Score</h4>
+          <pre>{JSON.stringify(emailData.risk_score, null, 2)}</pre>
+
+          <h4>📄 Email Content</h4>
+          <div
+            style={{ border: "1px solid #ccc", padding: "10px" }}
+            dangerouslySetInnerHTML={{ __html: emailData.html }}
+          />
         </div>
       )}
     </div>
