@@ -1,30 +1,66 @@
 import React, { useState } from "react";
 
 function EmailAnalyzer() {
-  const [content, setContent] = useState("");
+  const [file, setFile] = useState(null);
   const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
 
-  const analyze = async () => {
-    const res = await fetch("/analyze/email", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
-    });
-    const data = await res.json();
-    setResult(data);
+  const handleFileChange = (e) => {
+    setFile(e.target.files[0]);
+    setError("");
+    setResult(null);
+  };
+
+  const handleAnalyze = async () => {
+    if (!file) {
+      setError("Please upload a .eml or .msg file first.");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await fetch("http://localhost:8000/analyze/email", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        setError("Failed to analyze email: " + JSON.stringify(errData));
+        return;
+      }
+
+      const data = await res.json();
+      setResult(data);
+    } catch (err) {
+      setError("An error occurred while analyzing the email.");
+    }
   };
 
   return (
     <div>
-      <h2>Email Analyzer</h2>
-      <textarea
-        rows={5}
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-        placeholder="Paste email content..."
-      />
-      <button onClick={analyze}>Analyze</button>
-      {result && <pre>{JSON.stringify(result, null, 2)}</pre>}
+      <h2>📧 Email Analyzer</h2>
+      <p>
+        Upload a `.eml` or `.msg` file to analyze its content and detect honeytrap risks.
+        <br />
+        <strong>How to download a .eml file:</strong> Open an email in your email app or webmail → More Options → Download (.eml).
+      </p>
+
+      <input type="file" accept=".eml,.msg" onChange={handleFileChange} />
+      <br />
+      <button onClick={handleAnalyze} style={{ marginTop: "10px" }}>
+        Analyze Email
+      </button>
+
+      {error && <p style={{ color: "red" }}>{error}</p>}
+      {result && (
+        <div style={{ marginTop: "10px" }}>
+          <strong>Result:</strong>
+          <pre>{JSON.stringify(result, null, 2)}</pre>
+        </div>
+      )}
     </div>
   );
 }

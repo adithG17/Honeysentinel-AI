@@ -1,13 +1,16 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from typing import Optional
+import os
+
 
 from backend.app.services.message_analyzer import analyze_message
-from backend.app.services.email_analyzer import analyze_email
 from backend.app.services.image_analyzer import analyze_image
 from backend.app.services.audio_analyzer import analyze_audio
 from backend.app.services.video_analyzer import analyze_video
 from backend.app.services.gmail_reader import fetch_gmail_messages
+from backend.app.services.email_analyzer import extract_email_content, analyze_email
+
 
 
 router = APIRouter()
@@ -37,9 +40,42 @@ def analyze_message_route(input: MessageInput):
     return {"risk_score": score}
 
 @router.post("/analyze/email")
-def analyze_email_route(input: EmailInput):
-    score = analyze_email(input.content)
-    return {"risk_score": score}
+async def analyze_email_route(file: UploadFile = File(...)):
+    try:
+        # Save the uploaded file
+        temp_dir = "temp"
+        os.makedirs(temp_dir, exist_ok=True)
+        file_path = os.path.join(temp_dir, file.filename)
+
+        with open(file_path, "wb") as f:
+            f.write(await file.read())
+
+        score = analyze_email(file_path)
+        return {"risk_score": score}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.post("/analyze/email/file")
+async def analyze_email_file(file: UploadFile = File(...)):
+    file_content = await file.read()
+    try:
+        from backend.app.services.email_analyzer import extract_email_content, analyze_email
+
+        email_data = extract_email_content(file_content)
+        risk_score = analyze_email(email_data.get("html", "") + email_data.get("text", ""))
+        return {
+            "subject": email_data.get("subject", "No subject"),
+            "from": email_data.get("from", "Unknown sender"),
+            "html": email_data.get("html", ""),
+            "risk_score": risk_score,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+
 
 @router.post("/analyze/image")
 async def analyze_image_route(file: UploadFile = File(...)):
