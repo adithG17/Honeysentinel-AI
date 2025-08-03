@@ -1,53 +1,16 @@
-import os.path
+import os
 import base64
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from email import message_from_bytes
-from bs4 import BeautifulSoup
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
-
-CREDENTIALS_PATH = os.path.abspath("credentials.json")
 TOKEN_PATH = os.path.abspath("token.json")
-
-def extract_email_metadata(msg_data):
-    headers = msg_data.get("payload", {}).get("headers", [])
-    metadata = {"from": "", "to": "", "subject": "", "date": ""}
-    for header in headers:
-        name = header.get("name", "").lower()
-        if name in metadata:
-            metadata[name] = header.get("value", "")
-    return metadata
-
-def get_html_content(msg_data):
-    payload = msg_data.get("payload", {})
-    parts = payload.get("parts", [])
-
-    # Traverse recursively to find HTML part
-    def find_html(parts):
-        for part in parts:
-            if part.get("mimeType") == "text/html":
-                data = part["body"].get("data")
-                if data:
-                    return base64.urlsafe_b64decode(data.encode()).decode()
-            elif "parts" in part:
-                result = find_html(part["parts"])
-                if result:
-                    return result
-        return None
-
-    html = find_html(parts)
-    if html:
-        return html
-
-    # fallback: return snippet if no HTML found
-    return msg_data.get("snippet", "[No HTML content]")
+CREDENTIALS_PATH = os.path.abspath("credentials.json")
 
 def fetch_gmail_messages():
     creds = None
-
     if os.path.exists(TOKEN_PATH):
         creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
 
@@ -61,14 +24,47 @@ def fetch_gmail_messages():
             token.write(creds.to_json())
 
     service = build('gmail', 'v1', credentials=creds)
-    result = service.users().messages().list(userId='me', maxResults=10).execute()
+    result = service.users().messages().list(userId='me', maxResults=5).execute()
     messages = result.get('messages', [])
 
-    email_data = []
+    emails = []
     for msg in messages:
         msg_data = service.users().messages().get(userId='me', id=msg['id'], format='full').execute()
-        meta = extract_email_metadata(msg_data)
-        html_body = get_html_content(msg_data)
-        email_data.append({**meta, "html": html_body})
 
-    return email_data
+        headers = msg_data['payload'].get('headers', [])
+        metadata = {
+            'from': next((h['value'] for h in headers if h['name'].lower() == 'from'), ''),
+            'to': next((h['value'] for h in headers if h['name'].lower() == 'to'), ''),
+            'subject': next((h['value'] for h in headers if h['name'].lower() == 'subject'), ''),
+            'date': next((h['value'] for h in headers if h['name'].lower() == 'date'), '')
+        }
+
+        body = ''
+        parts = msg_data['payload'].get('parts', [])
+        attachments = []
+
+        for part in parts:
+            if part['mimeType'] == 'text/html':
+                data = part['body'].get('data')
+                if data:
+                    body = base64.urlsafe_b64decode(data).decode()
+            elif part['filename']:
+                attach_id = part['body'].get('attachmentId')
+                if attach_id:
+                    attachment = service.users().messages().attachments().get(
+                        userId='me', messageId=msg['id'], id=attach_id
+                    ).execute()
+                    file_data = attachment['data']
+                    attachments.append({
+                        'filename': part['filename'],
+                        'mime_type': part['mimeType'],
+                        'data_base64': file_data
+                    })
+
+        emails.append({
+            'metadata': metadata,
+            'body': body,
+            'attachments': attachments
+        })
+
+    return emails
