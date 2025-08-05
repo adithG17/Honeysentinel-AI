@@ -96,11 +96,11 @@ function GmailAnalyzer() {
           </p>
 
           <div style={{ border: "1px solid #ddd", padding: "10px", marginBottom: "20px" }}>
-            {typeof currentEmail.body === "string" ? (
-              <div dangerouslySetInnerHTML={{ __html: currentEmail.body }} />
+            {typeof currentEmail.body_html === "string" ? (
+              <div dangerouslySetInnerHTML={{ __html: currentEmail.body_html }} />
             ) : (
               <pre style={{ fontStyle: "italic" }}>
-                {currentEmail.body ? JSON.stringify(currentEmail.body, null, 2) : "No content"}
+                {currentEmail.body_html ? JSON.stringify(currentEmail.body_html, null, 2) : "No content"}
               </pre>
             )}
           </div>
