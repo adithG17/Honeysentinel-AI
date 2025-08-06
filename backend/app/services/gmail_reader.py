@@ -1,119 +1,97 @@
-import base64
-from typing import Tuple, List, Dict
-from googleapiclient.discovery import build
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import InstalledAppFlow
 import os
+import base64
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
 
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-TOKEN_PATH = "token.json"
-CREDS_PATH = "credentials.json"
-
-
-# ----------  helpers  -------------------------------------------------
-def _decode(b64: str) -> str:
-    """URL-safe base64 → str, tolerant of padding."""
-    if b64 is None:
-        return ""
-    padding = 4 - (len(b64) % 4)
-    if padding and padding != 4:
-        b64 += "=" * padding
-    return base64.urlsafe_b64decode(b64.encode()).decode(errors="ignore")
+SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+TOKEN_PATH = os.path.abspath("token.json")
+CREDENTIALS_PATH = os.path.abspath("credentials.json")
 
 
-def _walk_parts(part, svc, msg_id) -> Tuple[str, List[Dict]]:
-    """
-    Depth-first search until we find the first text/html (or text/plain) part.
-    Collect attachments on the way.
-    Returns: html_body, [attachments]
-    """
-    html_body = ""
-    attachments: List[Dict] = []
+def get_email_body(payload):
+    """Recursively search for best HTML or text/plain body."""
+    html_parts = []
+    plain_parts = []
 
-    # 1️⃣ If this part is itself a leaf with data…
-    mime = part.get("mimeType", "")
-    body_data = part.get("body", {}).get("data")
+    def extract_parts(part):
+        if part.get("parts"):
+            for subpart in part["parts"]:
+                extract_parts(subpart)
+        else:
+            mime_type = part.get("mimeType")
+            data = part.get("body", {}).get("data")
+            if data:
+                decoded = base64.urlsafe_b64decode(data).decode(errors='replace').strip()
+                if mime_type == "text/html":
+                    html_parts.append(decoded)
+                elif mime_type == "text/plain":
+                    plain_parts.append(decoded)
 
-    if mime in {"text/html", "text/plain"} and body_data:
-        html_body = _decode(body_data)  # prefer html, but plain is OK
+    extract_parts(payload)
 
-    # 2️⃣ Attachment?
-    filename = part.get("filename")
-    attach_id = part.get("body", {}).get("attachmentId")
-    if filename and attach_id:
-        raw = (
-            svc.users()
-            .messages()
-            .attachments()
-            .get(userId="me", messageId=msg_id, id=attach_id)
-            .execute()
-        )
-        attachments.append(
-            {
-                "filename": filename,
-                "mime_type": mime,
-                "data_base64": raw["data"],
-            }
-        )
+    # Heuristic: ignore fallback "cannot display HTML" placeholders
+    def is_placeholder(content):
+        return "email client cannot display HTML" in content.lower() or "view web version" in content.lower()
 
-    # 3️⃣ Recurse into children (if any) **after** leaf check to keep
-    #     the first text/html we find.
-    for child in part.get("parts", []):
-        child_html, child_atts = _walk_parts(child, svc, msg_id)
-        if not html_body and child_html:
-            html_body = child_html
-        attachments.extend(child_atts)
+    html_parts = [html for html in html_parts if not is_placeholder(html)]
 
-    return html_body, attachments
+    return {
+        "html": html_parts[0] if html_parts else None,
+        "text": plain_parts[0] if plain_parts else None
+    }
 
 
-# ----------  main entry  ---------------------------------------------
-def fetch_gmail_messages(max_results: int = 5):
-    # ---- auth boilerplate ----
-    creds = (
-        Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
-        if os.path.exists(TOKEN_PATH)
-        else None
-    )
+def fetch_gmail_messages():
+    creds = None
+    if os.path.exists(TOKEN_PATH):
+        creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(CREDS_PATH, SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
             creds = flow.run_local_server(port=0)
-        with open(TOKEN_PATH, "w") as f:
-            f.write(creds.to_json())
+        with open(TOKEN_PATH, 'w') as token:
+            token.write(creds.to_json())
 
-    svc = build("gmail", "v1", credentials=creds)
-
-    # ---- pull the latest messages ----
-    msg_list = (
-        svc.users().messages().list(userId="me", maxResults=max_results).execute()
-    ).get("messages", [])
+    service = build('gmail', 'v1', credentials=creds)
+    result = service.users().messages().list(userId='me', maxResults=5).execute()
+    messages = result.get('messages', [])
 
     emails = []
-    for m in msg_list:
-        msg = svc.users().messages().get(userId="me", id=m["id"], format="full").execute()
+    for msg in messages:
+        msg_data = service.users().messages().get(userId='me', id=msg['id'], format='full').execute()
 
-        # grab header fields once
-        headers = {h["name"].lower(): h["value"] for h in msg["payload"]["headers"]}
+        headers = msg_data['payload'].get('headers', [])
         metadata = {
-            "from": headers.get("from", ""),
-            "to": headers.get("to", ""),
-            "subject": headers.get("subject", ""),
-            "date": headers.get("date", ""),
+            'from': next((h['value'] for h in headers if h['name'].lower() == 'from'), ''),
+            'to': next((h['value'] for h in headers if h['name'].lower() == 'to'), ''),
+            'subject': next((h['value'] for h in headers if h['name'].lower() == 'subject'), ''),
+            'date': next((h['value'] for h in headers if h['name'].lower() == 'date'), '')
         }
 
-        # dig through the MIME tree ⛏️
-        html_body, atts = _walk_parts(msg["payload"], svc, m["id"])
+        body_data = get_email_body(msg_data['payload'])
 
-        emails.append(
-            {
-                "metadata": metadata,
-                "body_html": html_body,  # note: we use body_html so React can `dangerouslySetInnerHTML`
-                "attachments": atts,
-            }
-        )
+        attachments = []
+        for part in msg_data['payload'].get("parts", []):
+            if part.get("filename") and part["body"].get("attachmentId"):
+                attachment = service.users().messages().attachments().get(
+                    userId='me', messageId=msg['id'], id=part['body']['attachmentId']
+                ).execute()
+                attachments.append({
+                    'filename': part['filename'],
+                    'mime_type': part['mimeType'],
+                    'data_base64': attachment['data']
+                })
+
+        emails.append({
+            'metadata': metadata,
+            'body_html': body_data["html"],
+            'body_text': body_data["text"],
+            'attachments': attachments
+        })
 
     return emails
