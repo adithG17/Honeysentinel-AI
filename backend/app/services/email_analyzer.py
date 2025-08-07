@@ -1,10 +1,19 @@
 from email import policy
 from email.parser import BytesParser
+import extract_msg
+import tempfile
+import os
+
 
 def extract_email_content(raw_bytes: bytes) -> dict:
+    """
+    Extract metadata and content from .eml email bytes.
+    """
     msg = BytesParser(policy=policy.default).parsebytes(raw_bytes)
     subject = msg['subject']
     sender = msg['from']
+    to = msg['to']
+    date = msg['date']
 
     html_content = None
     plain_text = None
@@ -31,27 +40,45 @@ def extract_email_content(raw_bytes: bytes) -> dict:
             plain_text = payload.decode(errors="ignore")
 
     return {
-        "subject": subject,
-        "from": sender,
+        "from": sender or "",
+        "to": to or "",
+        "subject": subject or "",
+        "date": date or "",
         "html": html_content or "",
         "text": plain_text or "",
     }
 
 
+def extract_msg_content(raw_bytes: bytes) -> dict:
+    """
+    Extract metadata and content from .msg (Outlook) email bytes.
+    """
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".msg") as temp_msg_file:
+        temp_msg_file.write(raw_bytes)
+        temp_msg_file_path = temp_msg_file.name
 
-def extract_email_metadata(file_path: str):
-    with open(file_path, 'rb') as f:
-        msg = BytesParser(policy=policy.default).parse(f)
+    try:
+        msg = extract_msg.Message(temp_msg_file_path)
+        msg.process()
 
-    metadata = {
-        "from": msg["from"],
-        "to": msg["to"],
-        "subject": msg["subject"],
-        "date": msg["date"],
-        "body": msg.get_body(preferencelist=('html', 'plain')).get_content()
-    }
+        subject = msg.subject or ""
+        sender = msg.sender or ""
+        to = msg.to or ""
+        date = msg.date or ""
+        html_content = msg.htmlBody or ""
+        plain_text = msg.body or ""
 
-    return metadata
+        return {
+            "from": sender,
+            "to": to,
+            "subject": subject,
+            "date": date,
+            "html": html_content,
+            "text": plain_text,
+        }
+    finally:
+        os.unlink(temp_msg_file_path)
+
 
 def analyze_email_html(content: str) -> float:
     """Basic heuristic analyzer for email HTML content."""

@@ -25,7 +25,7 @@ function App() {
   return (
     <div className="app-container">
       <aside className="sidebar">
-        <h2>📡 HoneySentinel</h2>
+        <h2>📡 HoneyBadger 🛡️</h2>
         <ul>
           <li onClick={() => setActive("gmail")}>📬 Gmail Analyzer</li>
           <li onClick={() => setActive("message")}>💬 Message Analyzer</li>
