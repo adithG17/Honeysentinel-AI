@@ -6,7 +6,7 @@
 
 .sidebar {
   width: 250px;
-  background-color: #f4f4f4;
+  background-color: #2f2f2f;
   padding: 20px;
   border-right: 1px solid #ccc;
 }
@@ -28,11 +28,16 @@
 }
 
 .sidebar ul li:hover {
-  background-color: #ddd;
+  background-color: #929292;
 }
 
 .content {
   flex: 1;
   padding: 30px;
   overflow-y: auto;
+}
+
+body {
+  color: white;
+  background-color: #272727; /* Optional: dark background */
 }

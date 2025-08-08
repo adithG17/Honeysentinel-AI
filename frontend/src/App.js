@@ -41,3 +41,8 @@ function App() {
 }
 
 export default App;
+/// change the text color to white
+const sidebarItems = document.querySelectorAll(".sidebar ul li");
+sidebarItems.forEach((item) => {
+  item.style.color = "white";
+});
