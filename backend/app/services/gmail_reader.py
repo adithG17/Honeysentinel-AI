@@ -58,7 +58,7 @@ def fetch_gmail_messages():
             token.write(creds.to_json())
 
     service = build('gmail', 'v1', credentials=creds)
-    result = service.users().messages().list(userId='me', maxResults=5, q='in:inbox -in:sent').execute()
+    result = service.users().messages().list(userId='me', maxResults=10, q='in:inbox -in:sent').execute()
     messages = result.get('messages', [])
 
     emails = []
