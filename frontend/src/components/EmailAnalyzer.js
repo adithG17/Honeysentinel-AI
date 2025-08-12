@@ -1,75 +1,167 @@
 import React, { useState } from "react";
 
-function EmailAnalyzer() {
+export default function EmailAnalyzer() {
+  const API_BASE = process.env.REACT_APP_API_BASE || "http://localhost:8000";
   const [file, setFile] = useState(null);
-  const [emailData, setEmailData] = useState(null);
+  const [data, setData] = useState(null); // parsed response
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const analyze = async () => {
+  const handleFileChange = (e) => {
+    setError("");
+    setData(null);
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    setFile(f);
+  };
+
+  const handleAnalyze = async () => {
+    setError("");
+    setData(null);
+
     if (!file) {
-      setError("Please choose a file.");
+      setError("Please select a .eml or .msg file first.");
       return;
     }
-    setError("");
-    const formData = new FormData();
-    formData.append("file", file);
 
+    const name = (file.name || "").toLowerCase();
+    if (!name.endsWith(".eml") && !name.endsWith(".msg")) {
+      setError("Only .eml and .msg files are supported.");
+      return;
+    }
+
+    const form = new FormData();
+    form.append("file", file);
+
+    setLoading(true);
     try {
-      const res = await fetch("http://localhost:8000/analyze/email", {
+      const res = await fetch(`${API_BASE}/analyze/email`, {
         method: "POST",
-        body: formData,
+        body: form,
       });
 
-      if (!res.ok) throw new Error("Failed to analyze");
+      if (!res.ok) {
+        // try to show useful backend message
+        let text;
+        try {
+          text = await res.text();
+        } catch (e) {
+          text = `HTTP ${res.status} ${res.statusText}`;
+        }
+        throw new Error(text || `HTTP ${res.status}`);
+      }
 
-      const data = await res.json();
-      setEmailData(data);
+      // parse JSON response safely
+      let json;
+      try {
+        json = await res.json();
+      } catch (e) {
+        throw new Error("Backend returned invalid JSON.");
+      }
+
+      // normalize possible response keys
+      const html =
+        json.html ??
+        json.html_body ??
+        json.body ??
+        json.text ??
+        json.text_body ??
+        "";
+      setData({
+        from: json.from ?? json.sender ?? "",
+        to: json.to ?? "",
+        subject: json.subject ?? "",
+        date: json.date ?? "",
+        html,
+        raw: json,
+      });
     } catch (err) {
-      setError("Failed to analyze email.");
-      console.error(err);
+      console.error("Analyze error:", err);
+      setError(String(err.message || err));
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div>
+    <div style={{ padding: 16 }}>
       <h2>📧 Email Analyzer</h2>
+
       <p>
-        Upload a <code>.eml</code> or <code>.msg</code> file to analyze its
-        content and detect honeytrap risks. <br />
-        <strong>How to download a .eml file:</strong> Open an email in your
-        email app or webmail → More Options → Download (.eml).
+        Upload <code>.eml</code> or <code>.msg</code> files. HTML will be rendered
+        below (dangerouslySetInnerHTML).
       </p>
 
-      <input type="file" onChange={(e) => setFile(e.target.files[0])} />
-      <button onClick={analyze}>Analyze Email</button>
+      <input
+        type="file"
+        accept=".eml,.msg"
+        onChange={handleFileChange}
+        style={{ marginBottom: 8 }}
+      />
+      <div>
+        <button onClick={handleAnalyze} disabled={loading}>
+          {loading ? "Analyzing..." : "Analyze Email"}
+        </button>
+      </div>
 
-      {error && <p style={{ color: "red" }}>{error}</p>}
+      {error && (
+        <div style={{ marginTop: 12, color: "crimson", whiteSpace: "pre-wrap" }}>
+          <strong>Error:</strong> {error}
+        </div>
+      )}
 
-      {emailData && (
-        <div style={{ marginTop: "20px" }}>
-          <h4>📨 Preview</h4>
-          <p>
-            <strong>From:</strong> {emailData.from}
+      {data && (
+        <div style={{ marginTop: 16 }}>
+          <h4>Metadata</h4>
+          <div>
+            <strong>From:</strong> {data.from || "—"}
             <br />
-            <strong>To:</strong> {emailData.to}
+            <strong>To:</strong> {data.to || "—"}
             <br />
-            <strong>Subject:</strong> {emailData.subject}
+            <strong>Subject:</strong> {data.subject || "—"}
             <br />
-            <strong>Date:</strong> {emailData.date}
-          </p>
+            <strong>Date:</strong> {data.date || "—"}
+          </div>
 
-          <h4>🧠 Risk Score</h4>
-          <pre>{JSON.stringify(emailData.risk_score, null, 2)}</pre>
+          <h4 style={{ marginTop: 12 }}>Email Body</h4>
 
-          <h4>📄 Email Content</h4>
-          <div
-            style={{ border: "1px solid #ccc", padding: "10px" }}
-            dangerouslySetInnerHTML={{ __html: emailData.html }}
-          />
+          {/* If we have HTML, render it. Otherwise show plain text in a pre tag. */}
+          {data.html ? (
+            <div
+              style={{
+                border: "1px solid #ccc",
+                padding: 12,
+                borderRadius: 6,
+                background: "#fff",
+                color: "#000",
+                marginTop: 8,
+              }}
+              dangerouslySetInnerHTML={{ __html: data.html }}
+            />
+          ) : (
+            <pre
+              style={{
+                whiteSpace: "pre-wrap",
+                border: "1px solid #ccc",
+                padding: 12,
+                borderRadius: 6,
+                background: "#f7f7f7",
+                color: "#000",
+                marginTop: 8,
+              }}
+            >
+              (no HTML content)
+            </pre>
+          )}
+
+          <details style={{ marginTop: 12 }}>
+            <summary>Raw backend response (for debugging)</summary>
+            <pre style={{ whiteSpace: "pre-wrap" }}>
+              {JSON.stringify(data.raw, null, 2)}
+            </pre>
+          </details>
         </div>
       )}
     </div>
   );
 }
-
-export default EmailAnalyzer;
