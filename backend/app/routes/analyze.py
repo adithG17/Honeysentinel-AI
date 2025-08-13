@@ -1,3 +1,6 @@
+import asyncio
+from concurrent.futures import ProcessPoolExecutor
+import os
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
@@ -6,12 +9,11 @@ from backend.app.services.image_analyzer import analyze_image
 from backend.app.services.audio_analyzer import analyze_audio
 from backend.app.services.video_analyzer import analyze_video
 from backend.app.services.gmail_reader import fetch_gmail_messages
-from backend.app.services.email_analyzer import (
-    extract_email_content,
-    extract_msg_content
-)
+from backend.app.services.email_analyzer import extract_email_content
+from backend.app.services.email_analyzer import extract_msg_content_fast
 
 router = APIRouter()
+EXECUTOR = ProcessPoolExecutor(max_workers=os.cpu_count() or 2)
 
 class MessageInput(BaseModel):
     message: str
@@ -42,19 +44,11 @@ async def analyze_email_upload(file: UploadFile = File(...)):
     content = await file.read()
 
     if file.filename.lower().endswith(".msg"):
-        parsed = extract_msg_content(content)
+        parsed = extract_msg_content_fast(content)
     else:
         parsed = extract_email_content(content)
 
-    return {
-        "from": parsed.get("from", ""),
-        "to": parsed.get("to", ""),
-        "subject": parsed.get("subject", ""),
-        "date": parsed.get("date", ""),
-        "html": parsed.get("html", "")
-    }
-
-
+    return parsed
 
 @router.post("/analyze/image")
 async def analyze_image_route(file: UploadFile = File(...)):
