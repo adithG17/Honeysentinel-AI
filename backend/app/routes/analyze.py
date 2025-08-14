@@ -21,7 +21,7 @@ class MessageInput(BaseModel):
 
 @router.get("/")
 def analyze_root():
-    return {"message": "Welcome to HoneyBadger AI Analyzer!"}
+    return {"message": "Welcome to HoneyBadger AI Analyzer! 🛡️"}
 
 
 @router.get("/analyze/gmail")
