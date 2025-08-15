@@ -25,9 +25,9 @@ def analyze_root():
 
 
 @router.get("/analyze/gmail")
-def analyze_gmail():
+async def analyze_gmail():
     try:
-        emails = fetch_gmail_messages()
+        emails = await fetch_gmail_messages(include_authenticity=True)
         return {"emails": emails}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
