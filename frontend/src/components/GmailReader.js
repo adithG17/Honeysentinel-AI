@@ -30,56 +30,101 @@ function GmailAnalyzer() {
     if (currentIndex < emails.length - 1) setCurrentIndex(currentIndex + 1);
   };
 
-  const renderAttachment = (att, index) => {
-    const mime = att.mime_type;
-    const base64Url = `data:${mime};base64,${att.data_base64}`;
+const renderAttachment = (att, index) => {
+  const mime = att.mime_type;
+  const base64Url = `data:${mime};base64,${att.data_base64}`;
 
+  // For PDFs - use object tag with fallback
+  if (mime === 'application/pdf') {
+    return (
+      <li key={index} style={{ marginBottom: "15px", padding: "10px", border: "1px solid #e0e0e0", borderRadius: "4px" }}>
+        <strong>{att.filename}</strong> ({mime}, {Math.round(att.size / 1024)} KB)
+        <div style={{ margin: "10px 0", height: "500px" }}>
+          <object
+            data={base64Url}
+            type="application/pdf"
+            width="100%"
+            height="100%"
+            style={{ border: "1px solid #ccc" }}
+          >
+            <p>Your browser doesn't support PDF preview. <a href={base64Url} download={att.filename}>Download instead</a></p>
+          </object>
+        </div>
+        <a
+          href={base64Url}
+          download={att.filename}
+          style={{
+            color: "#0066cc",
+            textDecoration: "none",
+            display: "inline-block",
+            marginTop: "10px"
+          }}
+        >
+          ⬇️ Download PDF
+        </a>
+      </li>
+    );
+  }
+
+  // For images
+  if (mime.startsWith("image/")) {
     return (
       <li key={index} style={{ marginBottom: "15px", padding: "10px", border: "1px solid #e0e0e0", borderRadius: "4px" }}>
         <strong>{att.filename}</strong> ({mime})
         <div style={{ margin: "10px 0" }}>
-          {mime === "application/pdf" ? (
-            <iframe
-              src={base64Url}
-              title={att.filename}
-              width="100%"
-              height="400px"
-              style={{ border: "1px solid #ccc" }}
-            />
-          ) : mime.startsWith("image/") ? (
-            <img
-              src={base64Url}
-              alt={att.filename}
-              style={{
-                maxWidth: "100%",
-                maxHeight: "300px",
-                display: "block",
-                marginBottom: "10px",
-                border: "1px solid #ccc",
-              }}
-            />
-          ) : mime.startsWith("text/") ? (
-            <pre
-              style={{
-                background: "#f9f9f9",
-                padding: "10px",
-                maxHeight: "200px",
-                overflowY: "auto",
-                whiteSpace: "pre-wrap",
-              }}
-            >
-              {atob(att.data_base64)}
-            </pre>
-          ) : (
-            <p>Unsupported file type for preview.</p>
-          )}
+          <img
+            src={base64Url}
+            alt={att.filename}
+            style={{
+              maxWidth: "100%",
+              maxHeight: "300px",
+              display: "block",
+              marginBottom: "10px",
+              border: "1px solid #ccc",
+            }}
+          />
         </div>
         <a href={base64Url} download={att.filename} style={{ color: "#0066cc", textDecoration: "none" }}>
           ⬇️ Download
         </a>
       </li>
     );
-  };
+  }
+
+  // For text files
+  if (mime.startsWith("text/")) {
+    return (
+      <li key={index} style={{ marginBottom: "15px", padding: "10px", border: "1px solid #e0e0e0", borderRadius: "4px" }}>
+        <strong>{att.filename}</strong> ({mime})
+        <pre
+          style={{
+            background: "#f9f9f9",
+            padding: "10px",
+            maxHeight: "200px",
+            overflowY: "auto",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {atob(att.data_base64)}
+        </pre>
+        <a href={base64Url} download={att.filename} style={{ color: "#0066cc", textDecoration: "none" }}>
+          ⬇️ Download
+        </a>
+      </li>
+    );
+  }
+
+  // For unsupported file types
+  return (
+    <li key={index} style={{ marginBottom: "15px", padding: "10px", border: "1px solid #e0e0e0", borderRadius: "4px" }}>
+      <strong>{att.filename}</strong> ({mime})
+      <p>Unsupported file type for preview.</p>
+      <a href={base64Url} download={att.filename} style={{ color: "#0066cc", textDecoration: "none" }}>
+        ⬇️ Download
+      </a>
+    </li>
+  );
+};
 
   const currentEmail = emails[currentIndex];
 
@@ -152,12 +197,12 @@ function GmailAnalyzer() {
     <div style={styles.container}>
       <h1 style={styles.header}>📧 Gmail Analyzer</h1>
       
-      {error && <div style={{ color: "red", padding: "10px", backgroundColor: "#272727" }}>{error}</div>}
+      {error && <p style={{ color: "red" }}>{error}</p>}
       
       {loading ? (
-        <div style={{ textAlign: "center", padding: "40px" }}>Loading emails...</div>
+        <p>Loading emails...</p>
       ) : emails.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "40px" }}>No emails found</div>
+        <p>No emails found</p>
       ) : (
         <div>
           {/* Email Metadata */}
@@ -254,7 +299,7 @@ function GmailAnalyzer() {
             <div style={styles.contentBox}>
               <h3 style={{ marginTop: 0 }}>📎 Attachments ({currentEmail.attachments.length})</h3>
               <ul style={{ listStyle: "none", padding: 0 }}>
-                {currentEmail.attachments.map(renderAttachment)}
+                {currentEmail.attachments.map((att, index) => renderAttachment(att, index))}
               </ul>
             </div>
           )}
