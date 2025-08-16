@@ -148,6 +148,7 @@ async def fetch_gmail_messages(max_results=10, include_authenticity=False):
             format='full'
         ).execute()
 
+
         # Always get the From address from headers
         headers = msg_data['payload'].get('headers', [])
         from_addr = next((h['value'] for h in headers if h['name'].lower() == 'from'), '')
@@ -179,11 +180,29 @@ async def fetch_gmail_messages(max_results=10, include_authenticity=False):
                 attachment = service.users().messages().attachments().get(
                     userId='me', messageId=msg['id'], id=part['body']['attachmentId']
                 ).execute()
+                
+                # Get the raw attachment data
+                attachment_data = attachment['data']
+                
+                # For binary attachments, we need to properly URL-safe decode the base64
+                try:
+                    # First decode the URL-safe base64 to standard base64
+                    standard_base64 = attachment_data.replace('-', '+').replace('_', '/')
+                    # Then decode to bytes
+                    decoded_data = base64.b64decode(standard_base64)
+                    # Then re-encode to standard base64 for the frontend
+                    clean_base64 = base64.b64encode(decoded_data).decode('utf-8')
+                except Exception as e:
+                    print(f"Error processing attachment {part['filename']}: {str(e)}")
+                    clean_base64 = attachment_data  # fallback to original if error
+
                 attachments.append({
                     'filename': part['filename'],
                     'mime_type': part['mimeType'],
-                    'data_base64': attachment['data']
+                    'data_base64': clean_base64,
+                    'size': part.get('body', {}).get('size', 0)
                 })
+
 
         # Perform authenticity checks if requested
         authenticity = None
