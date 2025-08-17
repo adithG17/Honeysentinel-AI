@@ -1,10 +1,6 @@
 import os
 import base64
-import asyncio
-import re
-from email.utils import parsedate_to_datetime
 from email import message_from_bytes
-import dns.asyncresolver
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -14,6 +10,7 @@ from googleapiclient.discovery import build
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 TOKEN_PATH = os.path.abspath("token.json")
 CREDENTIALS_PATH = os.path.abspath("credentials.json")
+
 
 def get_gmail_service():
     """Authenticate and return Gmail service."""
@@ -32,7 +29,8 @@ def get_gmail_service():
 
     return build('gmail', 'v1', credentials=creds)
 
-def get_email_body(payload):
+
+def get_gmail_body(payload):
     """Recursively search for best HTML or text/plain body from Gmail API payload."""
     html_parts = []
     plain_parts = []
@@ -53,20 +51,14 @@ def get_email_body(payload):
 
     extract_parts(payload)
 
-    # Heuristic: ignore fallback "cannot display HTML" placeholders
-    def is_placeholder(content):
-        return ("email client cannot display HTML" in content.lower() or 
-                "view web version" in content.lower())
-
-    html_parts = [html for html in html_parts if not is_placeholder(html)]
-
     return {
         "html": html_parts[0] if html_parts else None,
         "text": plain_parts[0] if plain_parts else None
     }
 
-def get_email_body_from_raw(raw_msg):
-    """Extract body from raw email message."""
+
+def get_gmail_body_from_raw(raw_msg):
+    """Extract body from raw gmail message."""
     if raw_msg.is_multipart():
         for part in raw_msg.get_payload():
             content_type = part.get_content_type()
@@ -75,7 +67,7 @@ def get_email_body_from_raw(raw_msg):
             elif content_type == "text/plain":
                 return part.get_payload(decode=True).decode(errors="ignore")
             else:
-                result = get_email_body_from_raw(part)
+                result = get_gmail_body_from_raw(part)
                 if result:
                     return result
     else:
@@ -84,53 +76,9 @@ def get_email_body_from_raw(raw_msg):
             return raw_msg.get_payload(decode=True).decode(errors="ignore")
     return ""
 
-async def get_email_authenticity(email_address):
-    """Check SPF, DKIM, and DMARC records with improved domain extraction."""
-    # Improved email pattern that handles various formats:
-    # user@domain.com, "Name" <user@domain.com>, user@sub.domain.com
-    email_pattern = r'@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})'
-    domain_match = re.search(email_pattern, email_address)
-    
-    if not domain_match:
-        return {
-            "SPF": ["Invalid email format"],
-            "DKIM": ["Invalid email format"], 
-            "DMARC": ["Invalid email format"]
-        }
 
-    domain = domain_match.group(1)
-    
-    resolver = dns.asyncresolver.Resolver()
-    resolver.nameservers = ["1.1.1.1", "8.8.8.8"]  # Cloudflare + Google DNS
-    resolver.lifetime = 3  # Timeout in seconds
-
-    async def lookup(record_type, name):
-        try:
-            answers = await resolver.resolve(name, record_type)
-            return [str(r) for r in answers]
-        except dns.resolver.NXDOMAIN:
-            return ["No record found"]
-        except dns.resolver.NoAnswer:
-            return ["No answer"]
-        except dns.resolver.Timeout:
-            return ["DNS lookup timed out"]
-        except Exception as e:
-            return [f"Lookup error: {str(e)}"]
-
-    # Run all DNS lookups in parallel
-    spf_task = lookup("TXT", domain)
-    dkim_task = lookup("TXT", f"default._domainkey.{domain}")
-    dmarc_task = lookup("TXT", f"_dmarc.{domain}")
-
-    spf, dkim, dmarc = await asyncio.gather(spf_task, dkim_task, dmarc_task)
-
-    return {
-        "domain": domain,  # Include the detected domain for debugging
-        "SPF": spf,
-        "DKIM": dkim,
-        "DMARC": dmarc
-    }
-async def fetch_gmail_messages(max_results=10, include_authenticity=False):
+def fetch_gmail_messages(max_results=10):
+    """Fetch Gmail messages metadata, body and attachments (no analysis)."""
     service = get_gmail_service()
     result = service.users().messages().list(
         userId='me',
@@ -139,40 +87,23 @@ async def fetch_gmail_messages(max_results=10, include_authenticity=False):
     ).execute()
     messages = result.get('messages', [])
 
-    emails = []
+    gmails = []
     for msg in messages:
-        # Get both full and raw message data
         msg_data = service.users().messages().get(
             userId='me',
             id=msg['id'],
             format='full'
         ).execute()
 
-
-        # Always get the From address from headers
         headers = msg_data['payload'].get('headers', [])
-        from_addr = next((h['value'] for h in headers if h['name'].lower() == 'from'), '')
-
-        # Only get raw message if needed for authenticity checks
-        if include_authenticity:
-            raw_msg = service.users().messages().get(
-                userId='me',
-                id=msg['id'],
-                format='raw'
-            ).execute()
-            raw_data = base64.urlsafe_b64decode(raw_msg['raw'].encode("UTF-8"))
-            email_msg = message_from_bytes(raw_data)
-        else:
-            email_msg = None
-
         metadata = {
-            'from': from_addr,
+            'from': next((h['value'] for h in headers if h['name'].lower() == 'from'), ''),
             'to': next((h['value'] for h in headers if h['name'].lower() == 'to'), ''),
             'subject': next((h['value'] for h in headers if h['name'].lower() == 'subject'), ''),
             'date': next((h['value'] for h in headers if h['name'].lower() == 'date'), '')
         }
 
-        body_data = get_email_body(msg_data['payload'])
+        body_data = get_gmail_body(msg_data['payload'])
 
         attachments = []
         for part in msg_data['payload'].get("parts", []):
@@ -180,21 +111,14 @@ async def fetch_gmail_messages(max_results=10, include_authenticity=False):
                 attachment = service.users().messages().attachments().get(
                     userId='me', messageId=msg['id'], id=part['body']['attachmentId']
                 ).execute()
-                
-                # Get the raw attachment data
+
                 attachment_data = attachment['data']
-                
-                # For binary attachments, we need to properly URL-safe decode the base64
                 try:
-                    # First decode the URL-safe base64 to standard base64
                     standard_base64 = attachment_data.replace('-', '+').replace('_', '/')
-                    # Then decode to bytes
                     decoded_data = base64.b64decode(standard_base64)
-                    # Then re-encode to standard base64 for the frontend
                     clean_base64 = base64.b64encode(decoded_data).decode('utf-8')
-                except Exception as e:
-                    print(f"Error processing attachment {part['filename']}: {str(e)}")
-                    clean_base64 = attachment_data  # fallback to original if error
+                except Exception:
+                    clean_base64 = attachment_data
 
                 attachments.append({
                     'filename': part['filename'],
@@ -203,19 +127,12 @@ async def fetch_gmail_messages(max_results=10, include_authenticity=False):
                     'size': part.get('body', {}).get('size', 0)
                 })
 
-
-        # Perform authenticity checks if requested
-        authenticity = None
-        if include_authenticity and from_addr:
-            authenticity = await get_email_authenticity(from_addr)
-
-        emails.append({
+        gmails.append({
             'id': msg['id'],
             'metadata': metadata,
             'body_html': body_data["html"],
             'body_text': body_data["text"],
             'attachments': attachments,
-            'authenticity': authenticity
         })
 
-    return emails
+    return gmails

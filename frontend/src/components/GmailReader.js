@@ -2,7 +2,88 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 
 function GmailAnalyzer() {
-  const [emails, setEmails] = useState([]);
+  // Open link in new tab securely
+  const handleOpenLink = (url) => {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  // Enhanced renderLinks with security warning and actions
+  const renderLinks = (links) => {
+    if (!links || links.length === 0) {
+      return <p>No links found in this email</p>;
+    }
+    return (
+      <div style={{ marginTop: '15px' }}>
+        <h4>🔗 Links Found ({links.length})</h4>
+        <div style={{
+          backgroundColor: '#272727',
+          padding: '15px',
+          borderRadius: '5px',
+          border: '1px solid #444'
+        }}>
+          <p style={{ color: '#ffcc00', marginBottom: '15px' }}>
+            ⚠️ Warning: Always verify links before opening. External links may be unsafe.
+          </p>
+          <ul style={{ listStyle: 'none', padding: 0 }}>
+            {links.map((link, index) => (
+              <li key={index} style={{
+                marginBottom: '15px',
+                padding: '15px',
+                border: '1px solid #444',
+                borderRadius: '4px',
+                backgroundColor: '#1a1a1a'
+              }}>
+                <div style={{ wordBreak: 'break-all', marginBottom: '8px' }}>
+                  <strong>URL:</strong> {link.url}
+                </div>
+                <div style={{ marginBottom: '8px' }}>
+                  <strong>Domain:</strong> {link.domain || 'None'}
+                </div>
+                <div style={{
+                  marginBottom: '10px',
+                  color: link.is_external ? '#ff6b6b' : '#4CAF50',
+                  fontWeight: 'bold'
+                }}>
+                  {link.is_external ? '⚠️ External Link' : '✓ Internal Link'}
+                </div>
+                <div style={{ marginBottom: '10px' }}>
+                  <strong>Security:</strong> {link.is_external ? 'Proceed with caution!' : 'Ok'}
+                </div>
+                <button
+                  onClick={() => handleOpenLink(link.url)}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#0066cc',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    marginRight: '10px'
+                  }}
+                >
+                  Open Link
+                </button>
+                <button
+                  onClick={() => navigator.clipboard.writeText(link.url)}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#333',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Copy Link
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    );
+  };
+  const [gmail, setgmail] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -12,7 +93,7 @@ function GmailAnalyzer() {
     axios
       .get("http://localhost:8000/analyze/gmail")
       .then((res) => {
-        setEmails(res.data.emails || []);
+        setgmail(res.data.gmail_messages || []);
         setLoading(false);
       })
       .catch((err) => {
@@ -27,7 +108,7 @@ function GmailAnalyzer() {
   };
 
   const handleNext = () => {
-    if (currentIndex < emails.length - 1) setCurrentIndex(currentIndex + 1);
+    if (currentIndex < gmail.length - 1) setCurrentIndex(currentIndex + 1);
   };
 
 const renderAttachment = (att, index) => {
@@ -126,7 +207,7 @@ const renderAttachment = (att, index) => {
   );
 };
 
-  const currentEmail = emails[currentIndex];
+  const currentEmail = gmail[currentIndex];
 
   // Styling objects
   const styles = {
@@ -200,9 +281,9 @@ const renderAttachment = (att, index) => {
       {error && <p style={{ color: "red" }}>{error}</p>}
       
       {loading ? (
-        <p>Loading emails...</p>
-      ) : emails.length === 0 ? (
-        <p>No emails found</p>
+        <p>Loading gmail...</p>
+      ) : gmail.length === 0 ? (
+        <p>No gmail found</p>
       ) : (
         <div>
           {/* Email Metadata */}
@@ -217,7 +298,7 @@ const renderAttachment = (att, index) => {
           <div style={styles.contentBox}>
             <h3 style={{ marginTop: 0 }}>📨 Email Content</h3>
             {currentEmail?.body_html ? (
-              <div 
+              <div
                 dangerouslySetInnerHTML={{ __html: currentEmail.body_html }}
                 style={{
                   maxHeight: "500px",
@@ -242,6 +323,11 @@ const renderAttachment = (att, index) => {
             ) : (
               <p style={{ fontStyle: "italic" }}>No email content available</p>
             )}
+          </div>
+
+          {/* Links Found in Email */}
+          <div style={styles.contentBox}>
+            {currentEmail?.links && renderLinks(currentEmail.links)}
           </div>
 
           {/* Sender Authenticity */}
@@ -313,11 +399,11 @@ const renderAttachment = (att, index) => {
             >
               Previous
             </button>
-            <span>Email {currentIndex + 1} of {emails.length}</span>
+            <span>Email {currentIndex + 1} of {gmail.length}</span>
             <button 
               onClick={handleNext} 
-              disabled={currentIndex === emails.length - 1}
-              style={{ ...styles.button, ...(currentIndex === emails.length - 1 ? styles.buttonDisabled : {}) }}
+              disabled={currentIndex === gmail.length - 1}
+              style={{ ...styles.button, ...(currentIndex === gmail.length - 1 ? styles.buttonDisabled : {}) }}
             >
               Next
             </button>
