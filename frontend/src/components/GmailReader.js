@@ -83,7 +83,7 @@ function GmailAnalyzer() {
       </div>
     );
   };
-  const [emails, setEmails] = useState([]);
+  const [gmail, setgmail] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -93,7 +93,7 @@ function GmailAnalyzer() {
     axios
       .get("http://localhost:8000/analyze/gmail")
       .then((res) => {
-        setEmails(res.data.emails || []);
+        setgmail(res.data.gmail_messages || []);
         setLoading(false);
       })
       .catch((err) => {
@@ -108,7 +108,7 @@ function GmailAnalyzer() {
   };
 
   const handleNext = () => {
-    if (currentIndex < emails.length - 1) setCurrentIndex(currentIndex + 1);
+    if (currentIndex < gmail.length - 1) setCurrentIndex(currentIndex + 1);
   };
 
 const renderAttachment = (att, index) => {
@@ -207,7 +207,7 @@ const renderAttachment = (att, index) => {
   );
 };
 
-  const currentEmail = emails[currentIndex];
+  const currentEmail = gmail[currentIndex];
 
   // Styling objects
   const styles = {
@@ -281,9 +281,9 @@ const renderAttachment = (att, index) => {
       {error && <p style={{ color: "red" }}>{error}</p>}
       
       {loading ? (
-        <p>Loading emails...</p>
-      ) : emails.length === 0 ? (
-        <p>No emails found</p>
+        <p>Loading gmail...</p>
+      ) : gmail.length === 0 ? (
+        <p>No gmail found</p>
       ) : (
         <div>
           {/* Email Metadata */}
@@ -399,11 +399,11 @@ const renderAttachment = (att, index) => {
             >
               Previous
             </button>
-            <span>Email {currentIndex + 1} of {emails.length}</span>
+            <span>Email {currentIndex + 1} of {gmail.length}</span>
             <button 
               onClick={handleNext} 
-              disabled={currentIndex === emails.length - 1}
-              style={{ ...styles.button, ...(currentIndex === emails.length - 1 ? styles.buttonDisabled : {}) }}
+              disabled={currentIndex === gmail.length - 1}
+              style={{ ...styles.button, ...(currentIndex === gmail.length - 1 ? styles.buttonDisabled : {}) }}
             >
               Next
             </button>

@@ -9,8 +9,10 @@ from backend.app.services.image_analyzer import analyze_image
 from backend.app.services.audio_analyzer import analyze_audio
 from backend.app.services.video_analyzer import analyze_video
 from backend.app.services.gmail_reader import fetch_gmail_messages
-from backend.app.services.email_analyzer import extract_email_content
-from backend.app.services.email_analyzer import extract_msg_content_fast
+from backend.app.analyzers.gmail_analyzer import get_gmail_authenticity, extract_links
+from backend.app.services.email_reader import extract_email_content
+from backend.app.services.email_reader import extract_msg_content_fast
+from backend.app.services.gmail_reader import fetch_gmail_messages
 
 router = APIRouter()
 EXECUTOR = ProcessPoolExecutor(max_workers=os.cpu_count() or 2)
@@ -25,10 +27,31 @@ def analyze_root():
 
 
 @router.get("/analyze/gmail")
-async def analyze_gmail():
+async def analyze_gmail(max_results: int = 10, include_authenticity: bool = True):
     try:
-        emails = await fetch_gmail_messages(include_authenticity=True)
-        return {"emails": emails}
+        # Step 1: Read Gmail messages (reader only)
+        gmails = fetch_gmail_messages(max_results=max_results)
+
+        analyzed_gmails = []
+        for g in gmails:
+            links = extract_links(g["body_html"]) if g["body_html"] else []
+
+            authenticity = None
+            if include_authenticity and g["metadata"].get("from"):
+                authenticity = await get_gmail_authenticity(g["metadata"]["from"])
+
+            analyzed_gmails.append({
+                "id": g["id"],
+                "metadata": g["metadata"],
+                "body_html": g["body_html"],
+                "body_text": g["body_text"],
+                "attachments": g["attachments"],
+                "links": links,
+                "authenticity": authenticity,
+            })
+
+        return {"gmail_messages": analyzed_gmails}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
