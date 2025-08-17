@@ -2,6 +2,87 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 
 function GmailAnalyzer() {
+  // Open link in new tab securely
+  const handleOpenLink = (url) => {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  // Enhanced renderLinks with security warning and actions
+  const renderLinks = (links) => {
+    if (!links || links.length === 0) {
+      return <p>No links found in this email</p>;
+    }
+    return (
+      <div style={{ marginTop: '15px' }}>
+        <h4>🔗 Links Found ({links.length})</h4>
+        <div style={{
+          backgroundColor: '#272727',
+          padding: '15px',
+          borderRadius: '5px',
+          border: '1px solid #444'
+        }}>
+          <p style={{ color: '#ffcc00', marginBottom: '15px' }}>
+            ⚠️ Warning: Always verify links before opening. External links may be unsafe.
+          </p>
+          <ul style={{ listStyle: 'none', padding: 0 }}>
+            {links.map((link, index) => (
+              <li key={index} style={{
+                marginBottom: '15px',
+                padding: '15px',
+                border: '1px solid #444',
+                borderRadius: '4px',
+                backgroundColor: '#1a1a1a'
+              }}>
+                <div style={{ wordBreak: 'break-all', marginBottom: '8px' }}>
+                  <strong>URL:</strong> {link.url}
+                </div>
+                <div style={{ marginBottom: '8px' }}>
+                  <strong>Domain:</strong> {link.domain || 'None'}
+                </div>
+                <div style={{
+                  marginBottom: '10px',
+                  color: link.is_external ? '#ff6b6b' : '#4CAF50',
+                  fontWeight: 'bold'
+                }}>
+                  {link.is_external ? '⚠️ External Link' : '✓ Internal Link'}
+                </div>
+                <div style={{ marginBottom: '10px' }}>
+                  <strong>Security:</strong> {link.is_external ? 'Proceed with caution!' : 'Ok'}
+                </div>
+                <button
+                  onClick={() => handleOpenLink(link.url)}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#0066cc',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    marginRight: '10px'
+                  }}
+                >
+                  Open Link
+                </button>
+                <button
+                  onClick={() => navigator.clipboard.writeText(link.url)}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#333',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Copy Link
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    );
+  };
   const [emails, setEmails] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [error, setError] = useState(null);
@@ -217,7 +298,7 @@ const renderAttachment = (att, index) => {
           <div style={styles.contentBox}>
             <h3 style={{ marginTop: 0 }}>📨 Email Content</h3>
             {currentEmail?.body_html ? (
-              <div 
+              <div
                 dangerouslySetInnerHTML={{ __html: currentEmail.body_html }}
                 style={{
                   maxHeight: "500px",
@@ -242,6 +323,11 @@ const renderAttachment = (att, index) => {
             ) : (
               <p style={{ fontStyle: "italic" }}>No email content available</p>
             )}
+          </div>
+
+          {/* Links Found in Email */}
+          <div style={styles.contentBox}>
+            {currentEmail?.links && renderLinks(currentEmail.links)}
           </div>
 
           {/* Sender Authenticity */}
