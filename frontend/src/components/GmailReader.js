@@ -2,63 +2,113 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 
 function GmailAnalyzer() {
-  // Open link in new tab securely
-  const handleOpenLink = (url) => {
-    window.open(url, '_blank', 'noopener,noreferrer');
+  // ======================
+  // 🔹 State Management
+  // ======================
+  const [gmail, setGmail] = useState([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  // ======================
+  // 🔹 Fetch Gmail Data
+  // ======================
+  useEffect(() => {
+    setLoading(true);
+    axios
+      .get("http://localhost:8000/analyze/gmail")
+      .then((res) => {
+        setGmail(res.data.gmail_messages || []);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error(err);
+        setError("Failed to fetch Gmail messages.");
+        setLoading(false);
+      });
+  }, []);
+
+  // ======================
+  // 🔹 Navigation Handlers
+  // ======================
+  const handlePrev = () => {
+    if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
   };
 
-  // Enhanced renderLinks with security warning and actions
+  const handleNext = () => {
+    if (currentIndex < gmail.length - 1) setCurrentIndex(currentIndex + 1);
+  };
+
+  // ======================
+  // 🔹 Utility Functions
+  // ======================
+  const handleOpenLink = (url) => {
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
   const renderLinks = (links) => {
     if (!links || links.length === 0) {
       return <p>No links found in this email</p>;
     }
+
     return (
-      <div style={{ marginTop: '15px' }}>
+      <div style={{ marginTop: "15px" }}>
         <h4>🔗 Links Found ({links.length})</h4>
-        <div style={{
-          backgroundColor: '#272727',
-          padding: '15px',
-          borderRadius: '5px',
-          border: '1px solid #444'
-        }}>
-          <p style={{ color: '#ffcc00', marginBottom: '15px' }}>
-            ⚠️ Warning: Always verify links before opening. External links may be unsafe.
+        <div
+          style={{
+            backgroundColor: "#272727",
+            padding: "15px",
+            borderRadius: "5px",
+            border: "1px solid #444",
+          }}
+        >
+          <p style={{ color: "#ffcc00", marginBottom: "15px" }}>
+            ⚠️ Warning: Always verify links before opening. External links may be
+            unsafe.
           </p>
-          <ul style={{ listStyle: 'none', padding: 0 }}>
+          <ul style={{ listStyle: "none", padding: 0 }}>
             {links.map((link, index) => (
-              <li key={index} style={{
-                marginBottom: '15px',
-                padding: '15px',
-                border: '1px solid #444',
-                borderRadius: '4px',
-                backgroundColor: '#1a1a1a'
-              }}>
-                <div style={{ wordBreak: 'break-all', marginBottom: '8px' }}>
+              <li
+                key={index}
+                style={{
+                  marginBottom: "15px",
+                  padding: "15px",
+                  border: "1px solid #444",
+                  borderRadius: "4px",
+                  backgroundColor: "#1a1a1a",
+                }}
+              >
+                <div style={{ wordBreak: "break-all", marginBottom: "8px" }}>
                   <strong>URL:</strong> {link.url}
                 </div>
-                <div style={{ marginBottom: '8px' }}>
-                  <strong>Domain:</strong> {link.domain || 'None'}
+                <div style={{ marginBottom: "8px" }}>
+                  <strong>Domain:</strong> {link.domain || "None"}
                 </div>
-                <div style={{
-                  marginBottom: '10px',
-                  color: link.is_external ? '#ff6b6b' : '#4CAF50',
-                  fontWeight: 'bold'
-                }}>
-                  {link.is_external ? '⚠️ External Link' : '✓ Internal Link'}
+                <div
+                  style={{
+                    marginBottom: "10px",
+                    color: link.is_external ? "#ff6b6b" : "#4CAF50",
+                    fontWeight: "bold",
+                  }}
+                >
+                  {link.is_external ? "⚠️ External Link" : "✓ Internal Link"}
                 </div>
-                <div style={{ marginBottom: '10px' }}>
-                  <strong>Security:</strong> {link.is_external ? 'Proceed with caution!' : 'Ok'}
+                <div style={{ marginBottom: "10px" }}>
+                  <strong>Security:</strong>{" "}
+                  {link.is_external ? "Proceed with caution!" : "Ok"}
                 </div>
+
+                {/* Actions */}
                 <button
                   onClick={() => handleOpenLink(link.url)}
                   style={{
-                    padding: '8px 16px',
-                    backgroundColor: '#0066cc',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    marginRight: '10px'
+                    padding: "8px 16px",
+                    backgroundColor: "#0066cc",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    marginRight: "10px",
                   }}
                 >
                   Open Link
@@ -66,12 +116,12 @@ function GmailAnalyzer() {
                 <button
                   onClick={() => navigator.clipboard.writeText(link.url)}
                   style={{
-                    padding: '8px 16px',
-                    backgroundColor: '#333',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
+                    padding: "8px 16px",
+                    backgroundColor: "#333",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
                   }}
                 >
                   Copy Link
@@ -83,145 +133,173 @@ function GmailAnalyzer() {
       </div>
     );
   };
-  const [gmail, setgmail] = useState([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    setLoading(true);
-    axios
-      .get("http://localhost:8000/analyze/gmail")
-      .then((res) => {
-        setgmail(res.data.gmail_messages || []);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error(err);
-        setError("Failed to fetch Gmail messages.");
-        setLoading(false);
-      });
-  }, []);
+  const renderAttachment = (att, index) => {
+    const mime = att.mime_type;
+    const base64Url = `data:${mime};base64,${att.data_base64}`;
 
-  const handlePrev = () => {
-    if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
-  };
-
-  const handleNext = () => {
-    if (currentIndex < gmail.length - 1) setCurrentIndex(currentIndex + 1);
-  };
-
-const renderAttachment = (att, index) => {
-  const mime = att.mime_type;
-  const base64Url = `data:${mime};base64,${att.data_base64}`;
-
-  // For PDFs - use object tag with fallback
-  if (mime === 'application/pdf') {
-    return (
-      <li key={index} style={{ marginBottom: "15px", padding: "10px", border: "1px solid #e0e0e0", borderRadius: "4px" }}>
-        <strong>{att.filename}</strong> ({mime}, {Math.round(att.size / 1024)} KB)
-        <div style={{ margin: "10px 0", height: "500px" }}>
-          <object
-            data={base64Url}
-            type="application/pdf"
-            width="100%"
-            height="100%"
-            style={{ border: "1px solid #ccc" }}
+    // 📄 PDF Preview
+    if (mime === "application/pdf") {
+      return (
+        <li
+          key={index}
+          style={{
+            marginBottom: "15px",
+            padding: "10px",
+            border: "1px solid #e0e0e0",
+            borderRadius: "4px",
+          }}
+        >
+          <strong>{att.filename}</strong> ({mime},{" "}
+          {Math.round(att.size / 1024)} KB)
+          <div style={{ margin: "10px 0", height: "500px" }}>
+            <object
+              data={base64Url}
+              type="application/pdf"
+              width="100%"
+              height="100%"
+              style={{ border: "1px solid #ccc" }}
+            >
+              <p>
+                Your browser doesn't support PDF preview.{" "}
+                <a href={base64Url} download={att.filename}>
+                  Download instead
+                </a>
+              </p>
+            </object>
+          </div>
+          <a
+            href={base64Url}
+            download={att.filename}
+            style={{
+              color: "#0066cc",
+              textDecoration: "none",
+              display: "inline-block",
+              marginTop: "10px",
+            }}
           >
-            <p>Your browser doesn't support PDF preview. <a href={base64Url} download={att.filename}>Download instead</a></p>
-          </object>
-        </div>
+            ⬇️ Download PDF
+          </a>
+        </li>
+      );
+    }
+
+    // 🖼️ Image Preview
+    if (mime.startsWith("image/")) {
+      return (
+        <li
+          key={index}
+          style={{
+            marginBottom: "15px",
+            padding: "10px",
+            border: "1px solid #e0e0e0",
+            borderRadius: "4px",
+          }}
+        >
+          <strong>{att.filename}</strong> ({mime})
+          <div style={{ margin: "10px 0" }}>
+            <img
+              src={base64Url}
+              alt={att.filename}
+              style={{
+                maxWidth: "100%",
+                maxHeight: "300px",
+                display: "block",
+                marginBottom: "10px",
+                border: "1px solid #ccc",
+              }}
+            />
+          </div>
+          <a
+            href={base64Url}
+            download={att.filename}
+            style={{ color: "#0066cc", textDecoration: "none" }}
+          >
+            ⬇️ Download
+          </a>
+        </li>
+      );
+    }
+
+    // 📜 Text Preview
+    if (mime.startsWith("text/")) {
+      return (
+        <li
+          key={index}
+          style={{
+            marginBottom: "15px",
+            padding: "10px",
+            border: "1px solid #e0e0e0",
+            borderRadius: "4px",
+          }}
+        >
+          <strong>{att.filename}</strong> ({mime})
+          <pre
+            style={{
+              background: "#f9f9f9",
+              padding: "10px",
+              maxHeight: "200px",
+              overflowY: "auto",
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {atob(att.data_base64)}
+          </pre>
+          <a
+            href={base64Url}
+            download={att.filename}
+            style={{ color: "#0066cc", textDecoration: "none" }}
+          >
+            ⬇️ Download
+          </a>
+        </li>
+      );
+    }
+
+    // ❌ Unsupported File
+    return (
+      <li
+        key={index}
+        style={{
+          marginBottom: "15px",
+          padding: "10px",
+          border: "1px solid #e0e0e0",
+          borderRadius: "4px",
+        }}
+      >
+        <strong>{att.filename}</strong> ({mime})
+        <p>Unsupported file type for preview.</p>
         <a
           href={base64Url}
           download={att.filename}
-          style={{
-            color: "#0066cc",
-            textDecoration: "none",
-            display: "inline-block",
-            marginTop: "10px"
-          }}
+          style={{ color: "#0066cc", textDecoration: "none" }}
         >
-          ⬇️ Download PDF
-        </a>
-      </li>
-    );
-  }
-
-  // For images
-  if (mime.startsWith("image/")) {
-    return (
-      <li key={index} style={{ marginBottom: "15px", padding: "10px", border: "1px solid #e0e0e0", borderRadius: "4px" }}>
-        <strong>{att.filename}</strong> ({mime})
-        <div style={{ margin: "10px 0" }}>
-          <img
-            src={base64Url}
-            alt={att.filename}
-            style={{
-              maxWidth: "100%",
-              maxHeight: "300px",
-              display: "block",
-              marginBottom: "10px",
-              border: "1px solid #ccc",
-            }}
-          />
-        </div>
-        <a href={base64Url} download={att.filename} style={{ color: "#0066cc", textDecoration: "none" }}>
           ⬇️ Download
         </a>
       </li>
     );
-  }
+  };
 
-  // For text files
-  if (mime.startsWith("text/")) {
-    return (
-      <li key={index} style={{ marginBottom: "15px", padding: "10px", border: "1px solid #e0e0e0", borderRadius: "4px" }}>
-        <strong>{att.filename}</strong> ({mime})
-        <pre
-          style={{
-            background: "#f9f9f9",
-            padding: "10px",
-            maxHeight: "200px",
-            overflowY: "auto",
-            whiteSpace: "pre-wrap",
-          }}
-        >
-          {atob(att.data_base64)}
-        </pre>
-        <a href={base64Url} download={att.filename} style={{ color: "#0066cc", textDecoration: "none" }}>
-          ⬇️ Download
-        </a>
-      </li>
-    );
-  }
-
-  // For unsupported file types
-  return (
-    <li key={index} style={{ marginBottom: "15px", padding: "10px", border: "1px solid #e0e0e0", borderRadius: "4px" }}>
-      <strong>{att.filename}</strong> ({mime})
-      <p>Unsupported file type for preview.</p>
-      <a href={base64Url} download={att.filename} style={{ color: "#0066cc", textDecoration: "none" }}>
-        ⬇️ Download
-      </a>
-    </li>
-  );
-};
-
+  // ======================
+  // 🔹 Current Email
+  // ======================
   const currentEmail = gmail[currentIndex];
 
-  // Styling objects
+  // ======================
+  // 🔹 Styles
+  // ======================
   const styles = {
     container: {
       maxWidth: "1200px",
       margin: "0 auto",
       padding: "20px",
-      fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif"
+      fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
     },
     header: {
       color: "#fff",
       borderBottom: "2px solid #eee",
       paddingBottom: "10px",
-      marginBottom: "20px"
+      marginBottom: "20px",
     },
     emailMeta: {
       backgroundColor: "#272727",
@@ -229,36 +307,30 @@ const renderAttachment = (att, index) => {
       padding: "15px",
       borderRadius: "5px",
       marginBottom: "20px",
-      lineHeight: "1.6"
+      lineHeight: "1.6",
     },
     contentBox: {
       border: "1px solid #929292",
       borderRadius: "5px",
       padding: "20px",
       marginBottom: "20px",
-      backgroundColor: "#272727"
+      backgroundColor: "#272727",
     },
     authenticityBox: {
       backgroundColor: "#272727",
       color: "#fff",
       padding: "15px",
       borderRadius: "5px",
-      marginBottom: "20px"
+      marginBottom: "20px",
     },
-    statusWarning: {
-      color: "#ffcc00",
-      fontWeight: "bold"
-    },
-    statusVerified: {
-      color: "#4CAF50",
-      fontWeight: "bold"
-    },
+    statusWarning: { color: "#ffcc00", fontWeight: "bold" },
+    statusVerified: { color: "#4CAF50", fontWeight: "bold" },
     navButtons: {
       display: "flex",
       justifyContent: "center",
       alignItems: "center",
       gap: "20px",
-      margin: "20px 0"
+      margin: "20px 0",
     },
     button: {
       padding: "8px 16px",
@@ -266,32 +338,40 @@ const renderAttachment = (att, index) => {
       color: "white",
       border: "none",
       borderRadius: "4px",
-      cursor: "pointer"
+      cursor: "pointer",
     },
-    buttonDisabled: {
-      opacity: 0.5,
-      cursor: "not-allowed"
-    }
+    buttonDisabled: { opacity: 0.5, cursor: "not-allowed" },
   };
 
+  // ======================
+  // 🔹 Render
+  // ======================
   return (
     <div style={styles.container}>
       <h1 style={styles.header}>📧 Gmail Analyzer</h1>
-      
+
       {error && <p style={{ color: "red" }}>{error}</p>}
-      
+
       {loading ? (
         <p>Loading gmail...</p>
       ) : gmail.length === 0 ? (
         <p>No gmail found</p>
       ) : (
         <div>
-          {/* Email Metadata */}
+          {/* Metadata */}
           <div style={styles.emailMeta}>
-            <p><strong>From:</strong> {currentEmail?.metadata?.from}</p>
-            <p><strong>To:</strong> {currentEmail?.metadata?.to}</p>
-            <p><strong>Subject:</strong> {currentEmail?.metadata?.subject}</p>
-            <p><strong>Date:</strong> {currentEmail?.metadata?.date}</p>
+            <p>
+              <strong>From:</strong> {currentEmail?.metadata?.from}
+            </p>
+            <p>
+              <strong>To:</strong> {currentEmail?.metadata?.to}
+            </p>
+            <p>
+              <strong>Subject:</strong> {currentEmail?.metadata?.subject}
+            </p>
+            <p>
+              <strong>Date:</strong> {currentEmail?.metadata?.date}
+            </p>
           </div>
 
           {/* Email Content */}
@@ -305,19 +385,21 @@ const renderAttachment = (att, index) => {
                   overflowY: "auto",
                   padding: "15px",
                   border: "1px solid #929292",
-                  backgroundColor: "#272727"
+                  backgroundColor: "#272727",
                 }}
               />
             ) : currentEmail?.body_text ? (
-              <pre style={{
-                whiteSpace: "pre-wrap",
-                fontFamily: "inherit",
-                padding: "15px",
-                backgroundColor: "#272727",
-                border: "1px solid #929292",
-                maxHeight: "500px",
-                overflowY: "auto"
-              }}>
+              <pre
+                style={{
+                  whiteSpace: "pre-wrap",
+                  fontFamily: "inherit",
+                  padding: "15px",
+                  backgroundColor: "#272727",
+                  border: "1px solid #929292",
+                  maxHeight: "500px",
+                  overflowY: "auto",
+                }}
+              >
                 {currentEmail.body_text}
               </pre>
             ) : (
@@ -325,53 +407,71 @@ const renderAttachment = (att, index) => {
             )}
           </div>
 
-          {/* Links Found in Email */}
+          {/* Links */}
           <div style={styles.contentBox}>
             {currentEmail?.links && renderLinks(currentEmail.links)}
           </div>
 
-          {/* Sender Authenticity */}
+          {/* Authenticity */}
           {currentEmail?.authenticity && (
             <div style={styles.authenticityBox}>
               <h3 style={{ marginTop: 0 }}>🔍 Sender Authenticity Check</h3>
-              <p><strong>Domain:</strong> {currentEmail.authenticity.domain}</p>
-              
+              <p>
+                <strong>Domain:</strong> {currentEmail.authenticity.domain}
+              </p>
+
+              {/* SPF */}
               <div style={{ marginTop: "15px" }}>
                 <strong>SPF Records:</strong>
                 <ul style={{ marginTop: "5px", marginLeft: "20px" }}>
                   {(currentEmail.authenticity.SPF || []).map((record, i) => (
-                    <li key={`spf-${i}`} style={{ wordBreak: "break-word", marginBottom: "5px" }}>
+                    <li
+                      key={`spf-${i}`}
+                      style={{ wordBreak: "break-word", marginBottom: "5px" }}
+                    >
                       <code>{record}</code>
                     </li>
                   ))}
                 </ul>
               </div>
 
+              {/* DKIM */}
               <div style={{ marginTop: "15px" }}>
                 <strong>DKIM Records:</strong>
                 <ul style={{ marginTop: "5px", marginLeft: "20px" }}>
                   {(currentEmail.authenticity.DKIM || []).map((record, i) => (
-                    <li key={`dkim-${i}`} style={{ wordBreak: "break-word", marginBottom: "5px" }}>
+                    <li
+                      key={`dkim-${i}`}
+                      style={{ wordBreak: "break-word", marginBottom: "5px" }}
+                    >
                       <code>{record}</code>
                     </li>
                   ))}
                 </ul>
               </div>
 
+              {/* DMARC */}
               <div style={{ marginTop: "15px" }}>
                 <strong>DMARC Records:</strong>
                 <ul style={{ marginTop: "5px", marginLeft: "20px" }}>
                   {(currentEmail.authenticity.DMARC || []).map((record, i) => (
-                    <li key={`dmarc-${i}`} style={{ wordBreak: "break-word", marginBottom: "5px" }}>
+                    <li
+                      key={`dmarc-${i}`}
+                      style={{ wordBreak: "break-word", marginBottom: "5px" }}
+                    >
                       <code>{record}</code>
                     </li>
                   ))}
                 </ul>
               </div>
 
-              <div style={{ marginTop: "15px", padding: "10px", backgroundColor: "#333" }}>
+              {/* Overall Status */}
+              <div
+                style={{ marginTop: "15px", padding: "10px", backgroundColor: "#333" }}
+              >
                 <strong>Overall Status:</strong>{" "}
-                {(currentEmail.authenticity.DKIM && currentEmail.authenticity.DKIM[0] === "No record found") ? (
+                {currentEmail.authenticity.DKIM &&
+                currentEmail.authenticity.DKIM[0] === "No record found" ? (
                   <span style={styles.statusWarning}>⚠️ Warning (DKIM missing)</span>
                 ) : (
                   <span style={styles.statusVerified}>✅ Verified</span>
@@ -381,29 +481,43 @@ const renderAttachment = (att, index) => {
           )}
 
           {/* Attachments */}
-          {currentEmail?.attachments && currentEmail.attachments.length > 0 && (
+          {currentEmail?.attachments?.length > 0 && (
             <div style={styles.contentBox}>
-              <h3 style={{ marginTop: 0 }}>📎 Attachments ({currentEmail.attachments.length})</h3>
+              <h3 style={{ marginTop: 0 }}>
+                📎 Attachments ({currentEmail.attachments.length})
+              </h3>
               <ul style={{ listStyle: "none", padding: 0 }}>
-                {currentEmail.attachments.map((att, index) => renderAttachment(att, index))}
+                {currentEmail.attachments.map((att, index) =>
+                  renderAttachment(att, index)
+                )}
               </ul>
             </div>
           )}
 
           {/* Navigation */}
           <div style={styles.navButtons}>
-            <button 
-              onClick={handlePrev} 
+            <button
+              onClick={handlePrev}
               disabled={currentIndex === 0}
-              style={{ ...styles.button, ...(currentIndex === 0 ? styles.buttonDisabled : {}) }}
+              style={{
+                ...styles.button,
+                ...(currentIndex === 0 ? styles.buttonDisabled : {}),
+              }}
             >
               Previous
             </button>
-            <span>Email {currentIndex + 1} of {gmail.length}</span>
-            <button 
-              onClick={handleNext} 
+            <span>
+              Email {currentIndex + 1} of {gmail.length}
+            </span>
+            <button
+              onClick={handleNext}
               disabled={currentIndex === gmail.length - 1}
-              style={{ ...styles.button, ...(currentIndex === gmail.length - 1 ? styles.buttonDisabled : {}) }}
+              style={{
+                ...styles.button,
+                ...(currentIndex === gmail.length - 1
+                  ? styles.buttonDisabled
+                  : {}),
+              }}
             >
               Next
             </button>
