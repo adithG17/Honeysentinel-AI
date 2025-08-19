@@ -2,23 +2,120 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 
 function GmailAnalyzer() {
-  // ======================
-  // 🔹 State Management
-  // ======================
-  const [gmail, setGmail] = useState([]);
+  const [emails, setEmails] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ======================
-  // 🔹 Fetch Gmail Data
-  // ======================
+  // Helper functions for DNS validation display
+  const getStatusColor = (status) => {
+    switch(status) {
+      case 'highly_trustworthy': return '#4CAF50';
+      case 'moderately_trustworthy': return '#FF9800';
+      case 'low_trust': return '#FF6B6B';
+      case 'untrustworthy': return '#F44336';
+      default: return '#9E9E9E';
+    }
+  };
+
+  const getStatusIcon = (status) => {
+    switch(status) {
+      case 'highly_trustworthy': return '✅';
+      case 'moderately_trustworthy': return '⚠️';
+      case 'low_trust': return '❌';
+      case 'untrustworthy': return '🚫';
+      default: return '❓';
+    }
+  };
+
+  const getDNSStatusConfig = (status) => {
+    const configs = {
+      'spf_configured': { icon: '✅', color: '#4CAF50', statusText: 'Configured' },
+      'no_spf': { icon: '❌', color: '#F44336', statusText: 'Not Configured' },
+      'spf_invalid': { icon: '⚠️', color: '#FF9800', statusText: 'Invalid' },
+      'dkim_configured': { icon: '✅', color: '#4CAF50', statusText: 'Configured' },
+      'no_dkim': { icon: '❌', color: '#F44336', statusText: 'Not Configured' },
+      'dkim_invalid': { icon: '⚠️', color: '#FF9800', statusText: 'Invalid' },
+      'dmarc_reject': { icon: '✅', color: '#4CAF50', statusText: 'Reject Policy' },
+      'dmarc_quarantine': { icon: '⚠️', color: '#FF9800', statusText: 'Quarantine Policy' },
+      'dmarc_none': { icon: '❌', color: '#F44336', statusText: 'None Policy' },
+      'no_dmarc': { icon: '❌', color: '#F44336', statusText: 'Not Configured' },
+      'dmarc_invalid': { icon: '⚠️', color: '#FF9800', statusText: 'Invalid' },
+      'mx_configured': { icon: '✅', color: '#4CAF50', statusText: 'Configured' },
+      'no_mx': { icon: '❌', color: '#F44336', statusText: 'Not Configured' },
+      'mx_invalid': { icon: '⚠️', color: '#FF9800', statusText: 'Invalid' },
+      'a_records_exist': { icon: '✅', color: '#4CAF50', statusText: 'Exists' },
+      'no_a_record': { icon: '❌', color: '#F44336', statusText: 'Not Found' },
+      'a_records_invalid': { icon: '⚠️', color: '#FF9800', statusText: 'Invalid' }
+    };
+    return configs[status] || { icon: '❓', color: '#9E9E9E', statusText: 'Unknown' };
+  };
+
+  const renderSecurityStatus = (securitySummary) => {
+    if (!securitySummary) {
+      return <div style={{ padding: '15px', backgroundColor: '#333', borderRadius: '5px', marginBottom: '20px' }}>
+        <h4 style={{ margin: '0 0 10px 0', color: '#FF6B6B' }}>❌ Security Summary Not Available</h4>
+      </div>;
+    }
+
+    return (
+      <div style={{ 
+        padding: '15px', 
+        backgroundColor: '#333', 
+        borderRadius: '5px',
+        marginBottom: '20px',
+        border: `2px solid ${getStatusColor(securitySummary.overall_status || 'untrustworthy')}`
+      }}>
+        <h4 style={{ margin: '0 0 10px 0' }}>
+          {getStatusIcon(securitySummary.overall_status || 'untrustworthy')} Overall Security Status: 
+          <span style={{ color: getStatusColor(securitySummary.overall_status || 'untrustworthy'), marginLeft: '8px' }}>
+            {(securitySummary.overall_status || 'untrustworthy').replace(/_/g, ' ').toUpperCase()}
+          </span>
+        </h4>
+      </div>
+    );
+  };
+
+  const renderDNSRecord = (title, records, status, statusConfig) => {
+    if (!statusConfig || !status) {
+      return <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#2a2a2a', borderRadius: '5px' }}>
+        <h5 style={{ margin: '0 0 10px 0', color: '#FF6B6B' }}>❌ DNS Record Not Available</h5>
+      </div>;
+    }
+
+    return (
+      <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#2a2a2a', borderRadius: '5px' }}>
+        <h5 style={{ margin: '0 0 10px 0', color: statusConfig.color }}>
+          {statusConfig.icon} {title}: {statusConfig.statusText}
+        </h5>
+        <div style={{ 
+          padding: '10px', 
+          backgroundColor: '#1a1a1a', 
+          borderRadius: '3px',
+          maxHeight: '150px',
+          overflowY: 'auto'
+        }}>
+          {records?.map((record, index) => (
+            <div key={index} style={{ 
+              fontFamily: 'monospace', 
+              fontSize: '12px',
+              marginBottom: '5px',
+              wordBreak: 'break-all'
+            }}>
+              {record}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   useEffect(() => {
     setLoading(true);
     axios
       .get("http://localhost:8000/analyze/gmail")
       .then((res) => {
-        setGmail(res.data.gmail_messages || []);
+        setEmails(res.data.gmail_messages || []);
         setLoading(false);
       })
       .catch((err) => {
@@ -28,20 +125,14 @@ function GmailAnalyzer() {
       });
   }, []);
 
-  // ======================
-  // 🔹 Navigation Handlers
-  // ======================
   const handlePrev = () => {
     if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
   };
 
   const handleNext = () => {
-    if (currentIndex < gmail.length - 1) setCurrentIndex(currentIndex + 1);
+    if (currentIndex < emails.length - 1) setCurrentIndex(currentIndex + 1);
   };
 
-  // ======================
-  // 🔹 Utility Functions
-  // ======================
   const handleOpenLink = (url) => {
     window.open(url, "_blank", "noopener,noreferrer");
   };
@@ -280,14 +371,8 @@ function GmailAnalyzer() {
     );
   };
 
-  // ======================
-  // 🔹 Current Email
-  // ======================
-  const currentEmail = gmail[currentIndex];
+  const currentEmail = emails[currentIndex];
 
-  // ======================
-  // 🔹 Styles
-  // ======================
   const styles = {
     container: {
       maxWidth: "1200px",
@@ -319,9 +404,10 @@ function GmailAnalyzer() {
     authenticityBox: {
       backgroundColor: "#272727",
       color: "#fff",
-      padding: "15px",
-      borderRadius: "5px",
+      padding: "20px",
+      borderRadius: "8px",
       marginBottom: "20px",
+      border: "1px solid #444"
     },
     statusWarning: { color: "#ffcc00", fontWeight: "bold" },
     statusVerified: { color: "#4CAF50", fontWeight: "bold" },
@@ -343,9 +429,6 @@ function GmailAnalyzer() {
     buttonDisabled: { opacity: 0.5, cursor: "not-allowed" },
   };
 
-  // ======================
-  // 🔹 Render
-  // ======================
   return (
     <div style={styles.container}>
       <h1 style={styles.header}>📧 Gmail Analyzer</h1>
@@ -353,9 +436,9 @@ function GmailAnalyzer() {
       {error && <p style={{ color: "red" }}>{error}</p>}
 
       {loading ? (
-        <p>Loading gmail...</p>
-      ) : gmail.length === 0 ? (
-        <p>No gmail found</p>
+        <p>Loading emails...</p>
+      ) : emails.length === 0 ? (
+        <p>No emails found</p>
       ) : (
         <div>
           {/* Metadata */}
@@ -385,7 +468,7 @@ function GmailAnalyzer() {
                   overflowY: "auto",
                   padding: "15px",
                   border: "1px solid #929292",
-                  backgroundColor: "#272727",
+                  backgroundColor: "#1a1a1a"
                 }}
               />
             ) : currentEmail?.body_text ? (
@@ -394,10 +477,10 @@ function GmailAnalyzer() {
                   whiteSpace: "pre-wrap",
                   fontFamily: "inherit",
                   padding: "15px",
-                  backgroundColor: "#272727",
+                  backgroundColor: "#1a1a1a",
                   border: "1px solid #929292",
                   maxHeight: "500px",
-                  overflowY: "auto",
+                  overflowY: "auto"
                 }}
               >
                 {currentEmail.body_text}
@@ -415,67 +498,73 @@ function GmailAnalyzer() {
           {/* Authenticity */}
           {currentEmail?.authenticity && (
             <div style={styles.authenticityBox}>
-              <h3 style={{ marginTop: 0 }}>🔍 Sender Authenticity Check</h3>
-              <p>
-                <strong>Domain:</strong> {currentEmail.authenticity.domain}
-              </p>
-
-              {/* SPF */}
-              <div style={{ marginTop: "15px" }}>
-                <strong>SPF Records:</strong>
-                <ul style={{ marginTop: "5px", marginLeft: "20px" }}>
-                  {(currentEmail.authenticity.SPF || []).map((record, i) => (
-                    <li
-                      key={`spf-${i}`}
-                      style={{ wordBreak: "break-word", marginBottom: "5px" }}
-                    >
-                      <code>{record}</code>
-                    </li>
-                  ))}
-                </ul>
+              <h3 style={{ marginTop: 0 }}>🔍 Email Authenticity Check</h3>
+              
+              {/* Domain and Syntax Validation */}
+              <div style={{ marginBottom: '20px' }}>
+                <p><strong>Domain:</strong> {currentEmail.authenticity.domain}</p>
+                <p>
+                  <strong>Email Syntax:</strong> 
+                  <span style={{ color: currentEmail.authenticity.syntax_valid ? '#4CAF50' : '#F44336', marginLeft: '8px' }}>
+                    {currentEmail.authenticity.syntax_valid ? '✅ Valid' : '❌ Invalid'}
+                  </span>
+                </p>
               </div>
 
-              {/* DKIM */}
-              <div style={{ marginTop: "15px" }}>
-                <strong>DKIM Records:</strong>
-                <ul style={{ marginTop: "5px", marginLeft: "20px" }}>
-                  {(currentEmail.authenticity.DKIM || []).map((record, i) => (
-                    <li
-                      key={`dkim-${i}`}
-                      style={{ wordBreak: "break-word", marginBottom: "5px" }}
-                    >
-                      <code>{record}</code>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              {/* Overall Security Status */}
+              {renderSecurityStatus(currentEmail.authenticity.security_summary)}
 
-              {/* DMARC */}
-              <div style={{ marginTop: "15px" }}>
-                <strong>DMARC Records:</strong>
-                <ul style={{ marginTop: "5px", marginLeft: "20px" }}>
-                  {(currentEmail.authenticity.DMARC || []).map((record, i) => (
-                    <li
-                      key={`dmarc-${i}`}
-                      style={{ wordBreak: "break-word", marginBottom: "5px" }}
-                    >
-                      <code>{record}</code>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              {/* Individual DNS Records */}
+              {renderDNSRecord(
+                'SPF Records',
+                currentEmail.authenticity.SPF,
+                currentEmail.authenticity.security_summary.spf_status,
+                getDNSStatusConfig(currentEmail.authenticity.security_summary.spf_status)
+              )}
 
-              {/* Overall Status */}
-              <div
-                style={{ marginTop: "15px", padding: "10px", backgroundColor: "#333" }}
-              >
-                <strong>Overall Status:</strong>{" "}
-                {currentEmail.authenticity.DKIM &&
-                currentEmail.authenticity.DKIM[0] === "No record found" ? (
-                  <span style={styles.statusWarning}>⚠️ Warning (DKIM missing)</span>
-                ) : (
-                  <span style={styles.statusVerified}>✅ Verified</span>
-                )}
+              {renderDNSRecord(
+                'DKIM Records',
+                currentEmail.authenticity.DKIM,
+                currentEmail.authenticity.security_summary.dkim_status,
+                getDNSStatusConfig(currentEmail.authenticity.security_summary.dkim_status)
+              )}
+
+              {renderDNSRecord(
+                'DMARC Records',
+                currentEmail.authenticity.DMARC,
+                currentEmail.authenticity.security_summary.dmarc_status,
+                getDNSStatusConfig(currentEmail.authenticity.security_summary.dmarc_status)
+              )}
+
+              {renderDNSRecord(
+                'MX Records',
+                currentEmail.authenticity.MX_Records,
+                currentEmail.authenticity.security_summary.mx_status,
+                getDNSStatusConfig(currentEmail.authenticity.security_summary.mx_status)
+              )}
+
+              {renderDNSRecord(
+                'A Records',
+                currentEmail.authenticity.A_Records,
+                currentEmail.authenticity.security_summary.a_record_status,
+                getDNSStatusConfig(currentEmail.authenticity.security_summary.a_record_status)
+              )}
+
+              {/* Security Explanation */}
+              <div style={{ 
+                marginTop: '20px', 
+                padding: '15px', 
+                backgroundColor: '#2a2a2a', 
+                borderRadius: '5px' 
+              }}>
+                <h5>🔒 Security Explanation:</h5>
+                <ul style={{ margin: '10px 0', paddingLeft: '20px' }}>
+                  <li><strong>SPF:</strong> Prevents email spoofing</li>
+                  <li><strong>DKIM:</strong> Ensures email integrity</li>
+                  <li><strong>DMARC:</strong> Policy for handling failed emails</li>
+                  <li><strong>MX Records:</strong> Mail server configuration</li>
+                  <li><strong>A Records:</strong> Domain IP addresses</li>
+                </ul>
               </div>
             </div>
           )}
@@ -507,14 +596,14 @@ function GmailAnalyzer() {
               Previous
             </button>
             <span>
-              Email {currentIndex + 1} of {gmail.length}
+              Email {currentIndex + 1} of {emails.length}
             </span>
             <button
               onClick={handleNext}
-              disabled={currentIndex === gmail.length - 1}
+              disabled={currentIndex === emails.length - 1}
               style={{
                 ...styles.button,
-                ...(currentIndex === gmail.length - 1
+                ...(currentIndex === emails.length - 1
                   ? styles.buttonDisabled
                   : {}),
               }}
