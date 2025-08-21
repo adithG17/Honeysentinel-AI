@@ -1,5 +1,6 @@
 import re
 import asyncio
+import dkim
 from urllib.parse import urlparse
 import dns.asyncresolver
 from email.utils import parseaddr
@@ -163,100 +164,113 @@ def extract_links(html_content):
 # ----------------------------
 # Authenticity analyzer
 # ----------------------------
-async def get_gmail_authenticity(email_address: str, msg=None) -> Dict[str, Any]:
-    """Check SPF, DKIM, DMARC, MX, and A records for a given email sender."""
 
-    domain = extract_domain(email_address)
 
-    if not domain:
-        return {
-            "domain": "",
-            "SPF": ["Invalid email format"],
-            "DKIM": ["Invalid email format"],
-            "DMARC": ["Invalid email format"],
-            "A_Records": ["Invalid email format"],
-            "MX_Records": ["Invalid email format"],
-            "syntax_valid": False,
-            "security_summary": {
-                "spf_status": "no_spf",
-                "dkim_status": "no_dkim",
-                "dmarc_status": "no_dmarc",
-                "mx_status": "no_mx",
-                "a_record_status": "no_a_record",
-                "overall_status": "untrustworthy",
-            },
-        }
+def extract_dkim_info(msg) -> List[str]:
+    """Extract DKIM selector(s) and domains from DKIM-Signature headers."""
+    selectors = []
+    for header in msg.get_all("DKIM-Signature", []):
+        selector_match = re.search(r"s=([^;]+)", header)
+        domain_match = re.search(r"d=([^;]+)", header)
+        if selector_match and domain_match:
+            selector = selector_match.group(1).strip()
+            domain = domain_match.group(1).strip()
+            selectors.append(f"{selector}._domainkey.{domain}")
+    return selectors
 
-    # Step 1: try parsing headers (Gmail already validates auth)
-    header_results = parse_authentication_headers(msg) if msg else {}
 
-    # Step 2: DNS lookups for completeness
-    spf_task = asyncio.create_task(dns_lookup("TXT", domain))
-    dkim_task = asyncio.create_task(dns_lookup("TXT", f"selector1._domainkey.{domain}"))
-    # Try multiple common DKIM selectors
-    dkim_task2 = asyncio.create_task(dns_lookup("TXT", f"default._domainkey.{domain}"))
-    dkim_task3 = asyncio.create_task(dns_lookup("TXT", f"dkim._domainkey.{domain}"))
-    dmarc_task = asyncio.create_task(dns_lookup("TXT", f"_dmarc.{domain}"))
-    mx_task = asyncio.create_task(dns_lookup("MX", domain))
-    a_task = asyncio.create_task(dns_lookup("A", domain))
 
-    SPF, DKIM1, DKIM2, DKIM3, DMARC, MX, A_records = await asyncio.gather(
-        spf_task, dkim_task, dkim_task2, dkim_task3, dmarc_task, mx_task, a_task
-    )
-
-    # Combine all DKIM results
-    DKIM = DKIM1 + DKIM2 + DKIM3
-
-    # Determine status based on headers first, then fall back to DNS
-    def get_status(header_key: str, dns_records: List[str], validation_func) -> str:
-        header_status = header_results.get(header_key, "unknown")
-        
-        if header_status != "unknown":
-            return header_status
-        
-        # Fall back to DNS validation
-        if validation_func(dns_records):
-            return "pass"
-        elif any("Lookup failed" in record for record in dns_records):
-            return "no_record"
-        else:
-            return "fail"
-
-    spf_status = get_status("spf", SPF, has_valid_spf)
-    dkim_status = get_status("dkim", DKIM, has_valid_dkim)
-    dmarc_status = get_status("dmarc", DMARC, has_valid_dmarc)
-    mx_status = "pass" if MX and not any("Lookup failed" in record for record in MX) else "no_mx"
-    a_record_status = "pass" if A_records and not any("Lookup failed" in record for record in A_records) else "no_a_record"
-
-    # Overall trust assessment
-    if (spf_status == "pass" and dmarc_status == "pass" and 
-        dkim_status in ["pass", "unknown"] and mx_status == "pass" and a_record_status == "pass"):
-        overall_status = "trustworthy"
-    elif (spf_status in ["no_spf", "fail"] or dmarc_status in ["no_dmarc", "fail"] or 
-          mx_status == "no_mx" or a_record_status == "no_a_record"):
-        overall_status = "suspicious"
-    else:
-        overall_status = "partially_trustworthy"
-
+async def get_gmail_authenticity(raw_email_bytes: bytes):
+    """
+    Check SPF, DKIM, DMARC, Email Syntax, Domain, and MX records for a Gmail message.
+    """
+    results = {"SPF": [], "DKIM": [], "DMARC": [], "MX": []}
     security_summary = {
-        "spf_status": spf_status,
-        "dkim_status": dkim_status,
-        "dmarc_status": dmarc_status,
-        "mx_status": mx_status,
-        "a_record_status": a_record_status,
-        "overall_status": overall_status,
+        "spf_status": "no_spf",
+        "dkim_status": "no_dkim",
+        "dmarc_status": "no_dmarc",
+        "overall_status": "untrustworthy"
     }
+
+    import email
+    msg = email.message_from_bytes(raw_email_bytes)
+    from_header = msg.get("From", "")
+    domain = extract_domain(from_header)
+
+    # ---- Email Syntax ----
+    email_syntax_valid = validate_email_syntax(from_header)
+    results["Email Syntax"] = "Valid" if email_syntax_valid else "Invalid"
+
+    # ---- DKIM check ----
+    try:
+        if dkim.verify(raw_email_bytes):
+            results["DKIM"].append("Pass")
+            security_summary["dkim_status"] = "dkim_configured"
+        else:
+            results["DKIM"].append("Fail")
+            security_summary["dkim_status"] = "dkim_invalid"
+    except Exception as e:
+        results["DKIM"].append(f"Error: {str(e)}")
+        security_summary["dkim_status"] = "dkim_invalid"
+
+    # ---- SPF & DMARC ----
+    try:
+        # SPF lookup
+        spf_records = await dns_lookup("TXT", domain)
+        if has_valid_spf(spf_records):
+            results["SPF"].append("Found SPF record")
+            security_summary["spf_status"] = "spf_configured"
+        else:
+            results["SPF"].append("No valid SPF record")
+            security_summary["spf_status"] = "no_spf"
+
+        # DMARC lookup
+        dmarc_records = await dns_lookup("TXT", f"_dmarc.{domain}")
+        if has_valid_dmarc(dmarc_records):
+            results["DMARC"].append("Found DMARC record")
+            security_summary["dmarc_status"] = "dmarc_reject"
+        else:
+            results["DMARC"].append("No valid DMARC record")
+            security_summary["dmarc_status"] = "no_dmarc"
+
+    except Exception as e:
+        results["SPF"].append(f"Resolver error: {str(e)}")
+        results["DMARC"].append(f"Resolver error: {str(e)}")
+
+    # ---- MX Record check ----
+    try:
+        mx_records = await dns_lookup("MX", domain)
+        if mx_records:
+            results["MX"].append("Valid MX record(s) found")
+        else:
+            results["MX"].append("No MX records found")
+    except Exception as e:
+        results["MX"].append(f"MX lookup failed: {str(e)}")
+
+    # ---- Overall status ----
+    if (
+        security_summary["spf_status"] == "spf_configured" and
+        security_summary["dkim_status"] == "dkim_configured" and
+        security_summary["dmarc_status"] == "dmarc_reject"
+    ):
+        security_summary["overall_status"] = "highly_trustworthy"
+    elif (
+        security_summary["spf_status"] == "spf_configured" or
+        security_summary["dkim_status"] == "dkim_configured"
+    ):
+        security_summary["overall_status"] = "moderately_trustworthy"
+    else:
+        security_summary["overall_status"] = "untrustworthy"
+
+    results["Domain"] = domain
+    results["Email Syntax"] = "Valid" if email_syntax_valid else "Invalid"
 
     return {
-        "domain": domain,
-        "SPF": SPF,
-        "DKIM": DKIM,
-        "DMARC": DMARC,
-        "A_Records": A_records,
-        "MX_Records": MX,
-        "syntax_valid": validate_email_syntax(email_address),
-        "security_summary": security_summary,
+    "results": results,
+    "security_summary": security_summary,
     }
+
+
 
 
 # ----------------------------
@@ -272,7 +286,7 @@ async def analyze_gmail_message(raw_email: bytes) -> Dict[str, Any]:
     date = msg.get("Date", "")
     body = get_email_body(msg)
 
-    authenticity = await get_gmail_authenticity(from_address, msg)
+    authenticity = await get_gmail_authenticity(raw_email)
 
     return {
         "metadata": {

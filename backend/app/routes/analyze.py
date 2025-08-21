@@ -3,16 +3,17 @@ from concurrent.futures import ProcessPoolExecutor
 import os
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
+from googleapiclient.discovery import build
+import base64
 
 from backend.app.services.message_analyzer import analyze_message
 from backend.app.services.image_analyzer import analyze_image
 from backend.app.services.audio_analyzer import analyze_audio
 from backend.app.services.video_analyzer import analyze_video
-from backend.app.services.gmail_reader import fetch_gmail_messages
+from backend.app.services.gmail_reader import fetch_gmail_messages,fetch_gmail_raw_message
 from backend.app.analyzers.gmail_analyzer import get_gmail_authenticity, extract_links
 from backend.app.services.email_reader import extract_email_content
 from backend.app.services.email_reader import extract_msg_content_fast
-from backend.app.services.gmail_reader import fetch_gmail_messages
 
 router = APIRouter()
 EXECUTOR = ProcessPoolExecutor(max_workers=os.cpu_count() or 2)
@@ -26,19 +27,22 @@ def analyze_root():
     return {"message": "Welcome to HoneyBadger AI Analyzer! 🛡️"}
 
 
+from googleapiclient.discovery import build
+import base64
+
 @router.get("/analyze/gmail")
 async def analyze_gmail(max_results: int = 10, include_authenticity: bool = True):
     try:
-        # Step 1: Read Gmail messages (reader only)
         gmails = fetch_gmail_messages(max_results=max_results)
-
         analyzed_gmails = []
+
         for g in gmails:
             links = extract_links(g["body_html"]) if g["body_html"] else []
 
             authenticity = None
-            if include_authenticity and g["metadata"].get("from"):
-                authenticity = await get_gmail_authenticity(g["metadata"]["from"])
+            if include_authenticity:
+                raw_email_bytes = fetch_gmail_raw_message(g["id"])
+                authenticity = await get_gmail_authenticity(raw_email_bytes)
 
             analyzed_gmails.append({
                 "id": g["id"],
@@ -47,13 +51,20 @@ async def analyze_gmail(max_results: int = 10, include_authenticity: bool = True
                 "body_text": g["body_text"],
                 "attachments": g["attachments"],
                 "links": links,
-                "authenticity": authenticity,
+                "authenticity": authenticity or {
+                "spf_status": "unknown",
+                "dkim_status": "unknown",
+                "dmarc_status": "unknown",
+                "score": 0,
+                "details": []
+            }
             })
 
         return {"gmail_messages": analyzed_gmails}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @router.post("/analyze/message")

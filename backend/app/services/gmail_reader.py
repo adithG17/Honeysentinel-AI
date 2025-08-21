@@ -29,6 +29,18 @@ def get_gmail_service():
 
     return build('gmail', 'v1', credentials=creds)
 
+def fetch_gmail_raw_message(message_id):
+    """Fetch full raw RFC822 Gmail message"""
+    service = get_gmail_service()   # <-- use your existing function
+    raw_msg = service.users().messages().get(
+        userId="me",
+        id=message_id,
+        format="raw"
+    ).execute()
+    raw_bytes = base64.urlsafe_b64decode(raw_msg["raw"].encode("UTF-8"))
+    return raw_bytes
+
+
 
 def get_gmail_body(payload):
     """Recursively search for best HTML or text/plain body from Gmail API payload."""
@@ -78,61 +90,71 @@ def get_gmail_body_from_raw(raw_msg):
 
 
 def fetch_gmail_messages(max_results=10):
-    """Fetch Gmail messages metadata, body and attachments (no analysis)."""
+    """Fetch Gmail messages metadata, body, attachments, and raw MIME (for DKIM/DMARC)."""
     service = get_gmail_service()
     result = service.users().messages().list(
-        userId='me',
+        userId="me",
         maxResults=max_results,
-        q='in:inbox -in:sent'
+        q="in:inbox -in:sent"
     ).execute()
-    messages = result.get('messages', [])
+    messages = result.get("messages", [])
 
     gmails = []
     for msg in messages:
+        # Full fetch (for metadata, body, attachments)
         msg_data = service.users().messages().get(
-            userId='me',
-            id=msg['id'],
-            format='full'
+            userId="me",
+            id=msg["id"],
+            format="full"
         ).execute()
 
-        headers = msg_data['payload'].get('headers', [])
+        # Raw fetch (for authenticity checks)
+        raw_msg_data = service.users().messages().get(
+            userId="me",
+            id=msg["id"],
+            format="raw"
+        ).execute()
+        raw_email = base64.urlsafe_b64decode(raw_msg_data["raw"])
+
+        headers = msg_data["payload"].get("headers", [])
         metadata = {
-            'from': next((h['value'] for h in headers if h['name'].lower() == 'from'), ''),
-            'to': next((h['value'] for h in headers if h['name'].lower() == 'to'), ''),
-            'subject': next((h['value'] for h in headers if h['name'].lower() == 'subject'), ''),
-            'date': next((h['value'] for h in headers if h['name'].lower() == 'date'), '')
+            "from": next((h["value"] for h in headers if h["name"].lower() == "from"), ""),
+            "to": next((h["value"] for h in headers if h["name"].lower() == "to"), ""),
+            "subject": next((h["value"] for h in headers if h["name"].lower() == "subject"), ""),
+            "date": next((h["value"] for h in headers if h["name"].lower() == "date"), ""),
         }
 
-        body_data = get_gmail_body(msg_data['payload'])
+        body_data = get_gmail_body(msg_data["payload"])
 
         attachments = []
-        for part in msg_data['payload'].get("parts", []):
+        for part in msg_data["payload"].get("parts", []):
             if part.get("filename") and part["body"].get("attachmentId"):
                 attachment = service.users().messages().attachments().get(
-                    userId='me', messageId=msg['id'], id=part['body']['attachmentId']
+                    userId="me", messageId=msg["id"], id=part["body"]["attachmentId"]
                 ).execute()
 
-                attachment_data = attachment['data']
+                attachment_data = attachment["data"]
                 try:
-                    standard_base64 = attachment_data.replace('-', '+').replace('_', '/')
+                    standard_base64 = attachment_data.replace("-", "+").replace("_", "/")
                     decoded_data = base64.b64decode(standard_base64)
-                    clean_base64 = base64.b64encode(decoded_data).decode('utf-8')
+                    clean_base64 = base64.b64encode(decoded_data).decode("utf-8")
                 except Exception:
                     clean_base64 = attachment_data
 
                 attachments.append({
-                    'filename': part['filename'],
-                    'mime_type': part['mimeType'],
-                    'data_base64': clean_base64,
-                    'size': part.get('body', {}).get('size', 0)
+                    "filename": part["filename"],
+                    "mime_type": part["mimeType"],
+                    "data_base64": clean_base64,
+                    "size": part.get("body", {}).get("size", 0),
                 })
 
         gmails.append({
-            'id': msg['id'],
-            'metadata': metadata,
-            'body_html': body_data["html"],
-            'body_text': body_data["text"],
-            'attachments': attachments,
+            "id": msg["id"],
+            "metadata": metadata,
+            "body_html": body_data["html"],
+            "body_text": body_data["text"],
+            "attachments": attachments,
+            "raw_email": raw_email,  # ✅ added for authenticity checks
         })
 
     return gmails

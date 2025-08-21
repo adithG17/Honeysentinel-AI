@@ -12,7 +12,6 @@ function GmailAnalyzer() {
     switch(status) {
       case 'highly_trustworthy': return '#4CAF50';
       case 'moderately_trustworthy': return '#FF9800';
-      case 'low_trust': return '#FF6B6B';
       case 'untrustworthy': return '#F44336';
       default: return '#9E9E9E';
     }
@@ -22,13 +21,20 @@ function GmailAnalyzer() {
     switch(status) {
       case 'highly_trustworthy': return '✅';
       case 'moderately_trustworthy': return '⚠️';
-      case 'low_trust': return '❌';
-      case 'untrustworthy': return '🚫';
+      case 'untrustworthy': return '❌';
       default: return '❓';
     }
   };
 
-  const getDNSStatusConfig = (status) => {
+  const getDNSStatusConfig = (status, records) => {
+    // First check if we have valid records
+    if (records && records.length > 0 && records[0] !== "No valid SPF record") {
+      if (status === 'spf_configured') {
+        return { icon: '✅', color: '#4CAF50', statusText: 'Configured' };
+      }
+      return { icon: '✅', color: '#4CAF50', statusText: 'Found' };
+    }
+    
     const configs = {
       'spf_configured': { icon: '✅', color: '#4CAF50', statusText: 'Configured' },
       'no_spf': { icon: '❌', color: '#F44336', statusText: 'Not Configured' },
@@ -43,10 +49,7 @@ function GmailAnalyzer() {
       'dmarc_invalid': { icon: '⚠️', color: '#FF9800', statusText: 'Invalid' },
       'mx_configured': { icon: '✅', color: '#4CAF50', statusText: 'Configured' },
       'no_mx': { icon: '❌', color: '#F44336', statusText: 'Not Configured' },
-      'mx_invalid': { icon: '⚠️', color: '#FF9800', statusText: 'Invalid' },
-      'a_records_exist': { icon: '✅', color: '#4CAF50', statusText: 'Exists' },
-      'no_a_record': { icon: '❌', color: '#F44336', statusText: 'Not Found' },
-      'a_records_invalid': { icon: '⚠️', color: '#FF9800', statusText: 'Invalid' }
+      'mx_invalid': { icon: '⚠️', color: '#FF9800', statusText: 'Invalid' }
     };
     return configs[status] || { icon: '❓', color: '#9E9E9E', statusText: 'Unknown' };
   };
@@ -77,6 +80,36 @@ function GmailAnalyzer() {
   };
 
   const renderDNSRecord = (title, records, status, statusConfig) => {
+    // Special handling for SPF records
+    if (title === 'SPF Records' && records && records.length > 0 && records[0] === "Found SPF record") {
+      return (
+        <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#2a2a2a', borderRadius: '5px' }}>
+          <h5 style={{ margin: '0 0 10px 0', color: '#4CAF50' }}>
+            ✅ {title}: Configured
+          </h5>
+          <p>Sender Policy Framework helps prevent email spoofing.</p>
+          <div style={{ 
+            padding: '10px', 
+            backgroundColor: '#1a1a1a', 
+            borderRadius: '3px',
+            maxHeight: '150px',
+            overflowY: 'auto'
+          }}>
+            {records.map((record, index) => (
+              <div key={index} style={{ 
+                fontFamily: 'monospace', 
+                fontSize: '12px',
+                marginBottom: '5px',
+                wordBreak: 'break-all'
+              }}>
+                {record}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
     if (!statusConfig || !status) {
       return <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#2a2a2a', borderRadius: '5px' }}>
         <h5 style={{ margin: '0 0 10px 0', color: '#FF6B6B' }}>❌ DNS Record Not Available</h5>
@@ -95,16 +128,22 @@ function GmailAnalyzer() {
           maxHeight: '150px',
           overflowY: 'auto'
         }}>
-          {records?.map((record, index) => (
-            <div key={index} style={{ 
-              fontFamily: 'monospace', 
-              fontSize: '12px',
-              marginBottom: '5px',
-              wordBreak: 'break-all'
-            }}>
-              {record}
+          {records && records.length > 0 ? (
+            records.map((record, index) => (
+              <div key={index} style={{ 
+                fontFamily: 'monospace', 
+                fontSize: '12px',
+                marginBottom: '5px',
+                wordBreak: 'break-all'
+              }}>
+                {typeof record === 'string' ? record : JSON.stringify(record)}
+              </div>
+            ))
+          ) : (
+            <div style={{ color: '#999', fontStyle: 'italic' }}>
+              No record details available
             </div>
-          ))}
+          )}
         </div>
       </div>
     );
@@ -339,7 +378,7 @@ function GmailAnalyzer() {
           <a
             href={base64Url}
             download={att.filename}
-            style={{ color: "#0066cc", textDecoration: "none" }}
+            style={{ color: '#0066cc', textDecoration: 'none' }}
           >
             ⬇️ Download
           </a>
@@ -363,7 +402,7 @@ function GmailAnalyzer() {
         <a
           href={base64Url}
           download={att.filename}
-          style={{ color: "#0066cc", textDecoration: "none" }}
+          style={{ color: '#0066cc', textDecoration: 'none' }}
         >
           ⬇️ Download
         </a>
@@ -379,10 +418,13 @@ function GmailAnalyzer() {
       margin: "0 auto",
       padding: "20px",
       fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+      backgroundColor: "#1e1e1e",
+      color: "#fff",
+      minHeight: "100vh"
     },
     header: {
       color: "#fff",
-      borderBottom: "2px solid #eee",
+      borderBottom: "2px solid #444",
       paddingBottom: "10px",
       marginBottom: "20px",
     },
@@ -395,7 +437,7 @@ function GmailAnalyzer() {
       lineHeight: "1.6",
     },
     contentBox: {
-      border: "1px solid #929292",
+      border: "1px solid #444",
       borderRadius: "5px",
       padding: "20px",
       marginBottom: "20px",
@@ -467,7 +509,7 @@ function GmailAnalyzer() {
                   maxHeight: "500px",
                   overflowY: "auto",
                   padding: "15px",
-                  border: "1px solid #929292",
+                  border: "1px solid #444",
                   backgroundColor: "#1a1a1a"
                 }}
               />
@@ -478,7 +520,7 @@ function GmailAnalyzer() {
                   fontFamily: "inherit",
                   padding: "15px",
                   backgroundColor: "#1a1a1a",
-                  border: "1px solid #929292",
+                  border: "1px solid #444",
                   maxHeight: "500px",
                   overflowY: "auto"
                 }}
@@ -502,11 +544,14 @@ function GmailAnalyzer() {
               
               {/* Domain and Syntax Validation */}
               <div style={{ marginBottom: '20px' }}>
-                <p><strong>Domain:</strong> {currentEmail.authenticity.domain}</p>
+                <p><strong>Domain:</strong> {currentEmail.authenticity.results?.Domain || currentEmail.authenticity.results?.domain}</p>
                 <p>
                   <strong>Email Syntax:</strong> 
-                  <span style={{ color: currentEmail.authenticity.syntax_valid ? '#4CAF50' : '#F44336', marginLeft: '8px' }}>
-                    {currentEmail.authenticity.syntax_valid ? '✅ Valid' : '❌ Invalid'}
+                  <span style={{ 
+                    color: currentEmail.authenticity.results?.["Email Syntax"] === "Valid" ? '#4CAF50' : '#F44336', 
+                    marginLeft: '8px' 
+                  }}>
+                    {currentEmail.authenticity.results?.["Email Syntax"] === "Valid" ? '✅ Valid' : '❌ Invalid'}
                   </span>
                 </p>
               </div>
@@ -517,37 +562,30 @@ function GmailAnalyzer() {
               {/* Individual DNS Records */}
               {renderDNSRecord(
                 'SPF Records',
-                currentEmail.authenticity.SPF,
-                currentEmail.authenticity.security_summary.spf_status,
-                getDNSStatusConfig(currentEmail.authenticity.security_summary.spf_status)
+                currentEmail.authenticity.results?.SPF,
+                currentEmail.authenticity.security_summary?.spf_status,
+                getDNSStatusConfig(currentEmail.authenticity.security_summary?.spf_status, currentEmail.authenticity.results?.SPF)
               )}
 
               {renderDNSRecord(
                 'DKIM Records',
-                currentEmail.authenticity.DKIM,
-                currentEmail.authenticity.security_summary.dkim_status,
-                getDNSStatusConfig(currentEmail.authenticity.security_summary.dkim_status)
+                currentEmail.authenticity.results?.DKIM,
+                currentEmail.authenticity.security_summary?.dkim_status,
+                getDNSStatusConfig(currentEmail.authenticity.security_summary?.dkim_status, currentEmail.authenticity.results?.DKIM)
               )}
 
               {renderDNSRecord(
                 'DMARC Records',
-                currentEmail.authenticity.DMARC,
-                currentEmail.authenticity.security_summary.dmarc_status,
-                getDNSStatusConfig(currentEmail.authenticity.security_summary.dmarc_status)
+                currentEmail.authenticity.results?.DMARC,
+                currentEmail.authenticity.security_summary?.dmarc_status,
+                getDNSStatusConfig(currentEmail.authenticity.security_summary?.dmarc_status, currentEmail.authenticity.results?.DMARC)
               )}
 
               {renderDNSRecord(
                 'MX Records',
-                currentEmail.authenticity.MX_Records,
-                currentEmail.authenticity.security_summary.mx_status,
-                getDNSStatusConfig(currentEmail.authenticity.security_summary.mx_status)
-              )}
-
-              {renderDNSRecord(
-                'A Records',
-                currentEmail.authenticity.A_Records,
-                currentEmail.authenticity.security_summary.a_record_status,
-                getDNSStatusConfig(currentEmail.authenticity.security_summary.a_record_status)
+                currentEmail.authenticity.results?.MX,
+                'mx_configured', // Assuming if we have MX records, they're configured
+                getDNSStatusConfig(currentEmail.authenticity.results?.MX?.length > 0 ? 'mx_configured' : 'no_mx', currentEmail.authenticity.results?.MX)
               )}
 
               {/* Security Explanation */}
@@ -563,7 +601,6 @@ function GmailAnalyzer() {
                   <li><strong>DKIM:</strong> Ensures email integrity</li>
                   <li><strong>DMARC:</strong> Policy for handling failed emails</li>
                   <li><strong>MX Records:</strong> Mail server configuration</li>
-                  <li><strong>A Records:</strong> Domain IP addresses</li>
                 </ul>
               </div>
             </div>
