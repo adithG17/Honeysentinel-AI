@@ -26,33 +26,65 @@ function GmailAnalyzer() {
     }
   };
 
-  const getDNSStatusConfig = (status, records) => {
-    // First check if we have valid records
-    if (records && records.length > 0 && records[0] !== "No valid SPF record") {
-      if (status === 'spf_configured') {
-        return { icon: '✅', color: '#4CAF50', statusText: 'Configured' };
-      }
-      return { icon: '✅', color: '#4CAF50', statusText: 'Found' };
+const getDNSStatusConfig = (status, records) => {
+  // Handle both arrays and strings
+  const recordValue = Array.isArray(records) ? records[0] : records;
+  
+  // Check the actual record content to determine the true status
+  if (recordValue) {
+    // SPF Records
+    if (recordValue.includes("No valid SPF record") || recordValue.includes("Not Configured")) {
+      return { icon: '❌', color: '#F44336', statusText: 'Not Configured' };
+    }
+    if (recordValue.includes("Found SPF record")) {
+      return { icon: '✅', color: '#4CAF50', statusText: 'Configured' };
     }
     
-    const configs = {
-      'spf_configured': { icon: '✅', color: '#4CAF50', statusText: 'Configured' },
-      'no_spf': { icon: '❌', color: '#F44336', statusText: 'Not Configured' },
-      'spf_invalid': { icon: '⚠️', color: '#FF9800', statusText: 'Invalid' },
-      'dkim_configured': { icon: '✅', color: '#4CAF50', statusText: 'Configured' },
-      'no_dkim': { icon: '❌', color: '#F44336', statusText: 'Not Configured' },
-      'dkim_invalid': { icon: '⚠️', color: '#FF9800', statusText: 'Invalid' },
-      'dmarc_reject': { icon: '✅', color: '#4CAF50', statusText: 'Reject Policy' },
-      'dmarc_quarantine': { icon: '⚠️', color: '#FF9800', statusText: 'Quarantine Policy' },
-      'dmarc_none': { icon: '❌', color: '#F44336', statusText: 'None Policy' },
-      'no_dmarc': { icon: '❌', color: '#F44336', statusText: 'Not Configured' },
-      'dmarc_invalid': { icon: '⚠️', color: '#FF9800', statusText: 'Invalid' },
-      'mx_configured': { icon: '✅', color: '#4CAF50', statusText: 'Configured' },
-      'no_mx': { icon: '❌', color: '#F44336', statusText: 'Not Configured' },
-      'mx_invalid': { icon: '⚠️', color: '#FF9800', statusText: 'Invalid' }
-    };
-    return configs[status] || { icon: '❓', color: '#9E9E9E', statusText: 'Unknown' };
+    // DKIM Records
+    if (recordValue === "Fail" || recordValue.includes("Invalid")) {
+      return { icon: '❌', color: '#F44336', statusText: 'Invalid' };
+    }
+    if (recordValue === "Pass") {
+      return { icon: '✅', color: '#4CAF50', statusText: 'Configured' };
+    }
+    
+    // DMARC Records
+    if (recordValue.includes("No valid DMARC record")) {
+      return { icon: '❌', color: '#F44336', statusText: 'Not Configured' };
+    }
+    if (recordValue.includes("Found DMARC record")) {
+      return { icon: '✅', color: '#4CAF50', statusText: 'Reject Policy' };
+    }
+    
+    // MX Records
+    if (recordValue.includes("No MX records found")) {
+      return { icon: '❌', color: '#F44336', statusText: 'Not Configured' };
+    }
+    if (recordValue.includes("Valid MX record(s) found")) {
+      return { icon: '✅', color: '#4CAF50', statusText: 'Found' };
+    }
+  }
+  
+  // Fallback to security summary status if record content is unclear
+  const configs = {
+    'spf_configured': { icon: '✅', color: '#4CAF50', statusText: 'Configured' },
+    'no_spf': { icon: '❌', color: '#F44336', statusText: 'Not Configured' },
+    'spf_invalid': { icon: '⚠️', color: '#FF9800', statusText: 'Invalid' },
+    'dkim_configured': { icon: '✅', color: '#4CAF50', statusText: 'Configured' },
+    'no_dkim': { icon: '❌', color: '#F44336', statusText: 'Not Configured' },
+    'dkim_invalid': { icon: '❌', color: '#F44336', statusText: 'Invalid' },
+    'dmarc_reject': { icon: '✅', color: '#4CAF50', statusText: 'Reject Policy' },
+    'dmarc_quarantine': { icon: '⚠️', color: '#FF9800', statusText: 'Quarantine Policy' },
+    'dmarc_none': { icon: '❌', color: '#F44336', statusText: 'None Policy' },
+    'no_dmarc': { icon: '❌', color: '#F44336', statusText: 'Not Configured' },
+    'dmarc_invalid': { icon: '⚠️', color: '#FF9800', statusText: 'Invalid' },
+    'mx_configured': { icon: '✅', color: '#4CAF50', statusText: 'Configured' },
+    'no_mx': { icon: '❌', color: '#F44336', statusText: 'Not Configured' },
+    'mx_invalid': { icon: '⚠️', color: '#FF9800', statusText: 'Invalid' }
   };
+  
+  return configs[status] || { icon: '❓', color: '#9E9E9E', statusText: 'Unknown' };
+};
 
   const renderSecurityStatus = (securitySummary) => {
     if (!securitySummary) {
@@ -79,48 +111,22 @@ function GmailAnalyzer() {
     );
   };
 
-  const renderDNSRecord = (title, records, status, statusConfig) => {
-    // Special handling for SPF records
-    if (title === 'SPF Records' && records && records.length > 0 && records[0] === "Found SPF record") {
-      return (
-        <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#2a2a2a', borderRadius: '5px' }}>
-          <h5 style={{ margin: '0 0 10px 0', color: '#4CAF50' }}>
-            ✅ {title}: Configured
-          </h5>
-          <p>Sender Policy Framework helps prevent email spoofing.</p>
-          <div style={{ 
-            padding: '10px', 
-            backgroundColor: '#1a1a1a', 
-            borderRadius: '3px',
-            maxHeight: '150px',
-            overflowY: 'auto'
-          }}>
-            {records.map((record, index) => (
-              <div key={index} style={{ 
-                fontFamily: 'monospace', 
-                fontSize: '12px',
-                marginBottom: '5px',
-                wordBreak: 'break-all'
-              }}>
-                {record}
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    }
-
-    if (!statusConfig || !status) {
-      return <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#2a2a2a', borderRadius: '5px' }}>
-        <h5 style={{ margin: '0 0 10px 0', color: '#FF6B6B' }}>❌ DNS Record Not Available</h5>
-      </div>;
-    }
-
+ const renderDNSRecord = (title, records, status, statusConfig) => {
+  // Handle both arrays and strings
+  const recordArray = Array.isArray(records) ? records : [records];
+  const recordValue = recordArray[0];
+  
+  // Get the actual status based on record content, not the security summary
+  const actualStatusConfig = getDNSStatusConfig(status, records);
+  
+  // Special handling for SPF records
+  if (title === 'SPF Records' && actualStatusConfig.statusText === 'Configured') {
     return (
       <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#2a2a2a', borderRadius: '5px' }}>
-        <h5 style={{ margin: '0 0 10px 0', color: statusConfig.color }}>
-          {statusConfig.icon} {title}: {statusConfig.statusText}
+        <h5 style={{ margin: '0 0 10px 0', color: actualStatusConfig.color }}>
+          {actualStatusConfig.icon} {title}: {actualStatusConfig.statusText}
         </h5>
+        <p>Sender Policy Framework helps prevent email spoofing.</p>
         <div style={{ 
           padding: '10px', 
           backgroundColor: '#1a1a1a', 
@@ -128,32 +134,95 @@ function GmailAnalyzer() {
           maxHeight: '150px',
           overflowY: 'auto'
         }}>
-          {records && records.length > 0 ? (
-            records.map((record, index) => (
-              <div key={index} style={{ 
-                fontFamily: 'monospace', 
-                fontSize: '12px',
-                marginBottom: '5px',
-                wordBreak: 'break-all'
-              }}>
-                {typeof record === 'string' ? record : JSON.stringify(record)}
-              </div>
-            ))
-          ) : (
-            <div style={{ color: '#999', fontStyle: 'italic' }}>
-              No record details available
+          {recordArray.map((record, index) => (
+            <div key={index} style={{ 
+              fontFamily: 'monospace', 
+              fontSize: '12px',
+              marginBottom: '5px',
+              wordBreak: 'break-all'
+            }}>
+              {record}
             </div>
-          )}
+          ))}
         </div>
       </div>
     );
-  };
+  }
 
-  useEffect(() => {
-    setLoading(true);
-    axios
-      .get("http://localhost:8000/analyze/gmail")
-      .then((res) => {
+  // Special handling for DKIM records
+  if (title === 'DKIM Records' && actualStatusConfig.statusText === 'Configured') {
+    return (
+      <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#2a2a2a', borderRadius: '5px' }}>
+        <h5 style={{ margin: '0 0 10px 0', color: actualStatusConfig.color }}>
+          {actualStatusConfig.icon} {title}: {actualStatusConfig.statusText}
+        </h5>
+        <p>DomainKeys Identified Mail ensures email integrity.</p>
+        <div style={{ 
+          padding: '10px', 
+          backgroundColor: '#1a1a1a', 
+          borderRadius: '3px',
+          maxHeight: '150px',
+          overflowY: 'auto'
+        }}>
+          {recordArray.map((record, index) => (
+            <div key={index} style={{ 
+              fontFamily: 'monospace', 
+              fontSize: '12px',
+              marginBottom: '5px',
+              wordBreak: 'break-all'
+            }}>
+              {record}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (!actualStatusConfig) {
+    return <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#2a2a2a', borderRadius: '5px' }}>
+      <h5 style={{ margin: '0 0 10px 0', color: '#FF6B6B' }}>❌ DNS Record Not Available</h5>
+    </div>;
+  }
+
+  return (
+    <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#2a2a2a', borderRadius: '5px' }}>
+      <h5 style={{ margin: '0 0 10px 0', color: actualStatusConfig.color }}>
+        {actualStatusConfig.icon} {title}: {actualStatusConfig.statusText}
+      </h5>
+      <div style={{ 
+        padding: '10px', 
+        backgroundColor: '#1a1a1a', 
+        borderRadius: '3px',
+        maxHeight: '150px',
+        overflowY: 'auto'
+      }}>
+        {recordArray.length > 0 && recordValue ? (
+          recordArray.map((record, index) => (
+            <div key={index} style={{ 
+              fontFamily: 'monospace', 
+              fontSize: '12px',
+              marginBottom: '5px',
+              wordBreak: 'break-all'
+            }}>
+              {typeof record === 'string' ? record : JSON.stringify(record)}
+            </div>
+          ))
+        ) : (
+          <div style={{ color: '#999', fontStyle: 'italic' }}>
+            No record details available
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+useEffect(() => {
+  setLoading(true);
+  axios
+    .get("http://localhost:8000/analyze/gmail")
+    .then((res) => {
         setEmails(res.data.gmail_messages || []);
         setLoading(false);
       })
@@ -561,32 +630,32 @@ function GmailAnalyzer() {
 
               {/* Individual DNS Records */}
               {renderDNSRecord(
-                'SPF Records',
-                currentEmail.authenticity.results?.SPF,
-                currentEmail.authenticity.security_summary?.spf_status,
-                getDNSStatusConfig(currentEmail.authenticity.security_summary?.spf_status, currentEmail.authenticity.results?.SPF)
-              )}
+  'SPF Records',
+  currentEmail.authenticity.results?.SPF,
+  currentEmail.authenticity.security_summary?.spf_status,
+  getDNSStatusConfig(currentEmail.authenticity.security_summary?.spf_status, currentEmail.authenticity.results?.SPF)
+)}
 
-              {renderDNSRecord(
-                'DKIM Records',
-                currentEmail.authenticity.results?.DKIM,
-                currentEmail.authenticity.security_summary?.dkim_status,
-                getDNSStatusConfig(currentEmail.authenticity.security_summary?.dkim_status, currentEmail.authenticity.results?.DKIM)
-              )}
+{renderDNSRecord(
+  'DKIM Records',
+  currentEmail.authenticity.results?.DKIM,
+  currentEmail.authenticity.security_summary?.dkim_status,
+  getDNSStatusConfig(currentEmail.authenticity.security_summary?.dkim_status, currentEmail.authenticity.results?.DKIM)
+)}
 
-              {renderDNSRecord(
-                'DMARC Records',
-                currentEmail.authenticity.results?.DMARC,
-                currentEmail.authenticity.security_summary?.dmarc_status,
-                getDNSStatusConfig(currentEmail.authenticity.security_summary?.dmarc_status, currentEmail.authenticity.results?.DMARC)
-              )}
+{renderDNSRecord(
+  'DMARC Records',
+  currentEmail.authenticity.results?.DMARC,
+  currentEmail.authenticity.security_summary?.dmarc_status,
+  getDNSStatusConfig(currentEmail.authenticity.security_summary?.dmarc_status, currentEmail.authenticity.results?.DMARC)
+)}
 
-              {renderDNSRecord(
-                'MX Records',
-                currentEmail.authenticity.results?.MX,
-                'mx_configured', // Assuming if we have MX records, they're configured
-                getDNSStatusConfig(currentEmail.authenticity.results?.MX?.length > 0 ? 'mx_configured' : 'no_mx', currentEmail.authenticity.results?.MX)
-              )}
+{renderDNSRecord(
+  'MX Records',
+  currentEmail.authenticity.results?.MX,
+  'mx_status', // This is just a placeholder since we determine status from record content
+  getDNSStatusConfig('mx_status', currentEmail.authenticity.results?.MX)
+)}
 
               {/* Security Explanation */}
               <div style={{ 
