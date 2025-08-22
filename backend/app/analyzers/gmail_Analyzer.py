@@ -184,7 +184,7 @@ async def get_gmail_authenticity(raw_email_bytes: bytes):
     """
     Check SPF, DKIM, DMARC, Email Syntax, Domain, and MX records for a Gmail message.
     """
-    results = {"SPF": [], "DKIM": [], "DMARC": [], "MX": []}
+    results = {"SPF": "", "DKIM": "", "DMARC": "", "MX": ""}  # Changed to empty strings
     security_summary = {
         "spf_status": "no_spf",
         "dkim_status": "no_dkim",
@@ -204,13 +204,13 @@ async def get_gmail_authenticity(raw_email_bytes: bytes):
     # ---- DKIM check ----
     try:
         if dkim.verify(raw_email_bytes):
-            results["DKIM"].append("Pass")
+            results["DKIM"] = "Pass"  # Changed from append to assignment
             security_summary["dkim_status"] = "dkim_configured"
         else:
-            results["DKIM"].append("Fail")
+            results["DKIM"] = "Fail"  # Changed from append to assignment
             security_summary["dkim_status"] = "dkim_invalid"
     except Exception as e:
-        results["DKIM"].append(f"Error: {str(e)}")
+        results["DKIM"] = f"Error: {str(e)}"  # Changed from append to assignment
         security_summary["dkim_status"] = "dkim_invalid"
 
     # ---- SPF & DMARC ----
@@ -218,34 +218,34 @@ async def get_gmail_authenticity(raw_email_bytes: bytes):
         # SPF lookup
         spf_records = await dns_lookup("TXT", domain)
         if has_valid_spf(spf_records):
-            results["SPF"].append("Found SPF record")
+            results["SPF"] = "Found SPF record"  # Changed from append to assignment
             security_summary["spf_status"] = "spf_configured"
         else:
-            results["SPF"].append("No valid SPF record")
+            results["SPF"] = "No valid SPF record"  # Changed from append to assignment
             security_summary["spf_status"] = "no_spf"
 
         # DMARC lookup
         dmarc_records = await dns_lookup("TXT", f"_dmarc.{domain}")
         if has_valid_dmarc(dmarc_records):
-            results["DMARC"].append("Found DMARC record")
+            results["DMARC"] = "Found DMARC record"  # Changed from append to assignment
             security_summary["dmarc_status"] = "dmarc_reject"
         else:
-            results["DMARC"].append("No valid DMARC record")
+            results["DMARC"] = "No valid DMARC record"  # Changed from append to assignment
             security_summary["dmarc_status"] = "no_dmarc"
 
     except Exception as e:
-        results["SPF"].append(f"Resolver error: {str(e)}")
-        results["DMARC"].append(f"Resolver error: {str(e)}")
+        results["SPF"] = f"Resolver error: {str(e)}"  # Changed from append to assignment
+        results["DMARC"] = f"Resolver error: {str(e)}"  # Changed from append to assignment
 
     # ---- MX Record check ----
     try:
         mx_records = await dns_lookup("MX", domain)
         if mx_records:
-            results["MX"].append("Valid MX record(s) found")
+            results["MX"] = "Valid MX record(s) found"  # Changed from append to assignment
         else:
-            results["MX"].append("No MX records found")
+            results["MX"] = "No MX records found"  # Changed from append to assignment
     except Exception as e:
-        results["MX"].append(f"MX lookup failed: {str(e)}")
+        results["MX"] = f"MX lookup failed: {str(e)}"  # Changed from append to assignment
 
     # ---- Overall status ----
     if (
@@ -266,8 +266,8 @@ async def get_gmail_authenticity(raw_email_bytes: bytes):
     results["Email Syntax"] = "Valid" if email_syntax_valid else "Invalid"
 
     return {
-    "results": results,
-    "security_summary": security_summary,
+        "results": results,
+        "security_summary": security_summary,
     }
 
 
