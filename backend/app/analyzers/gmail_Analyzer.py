@@ -21,7 +21,7 @@ def extract_domain(email_address: str) -> str:
 
 def validate_email_syntax(email_address: str) -> bool:
     """Validate email syntax using RFC 5322 regex."""
-    email_regex = r'^[a-zA-Z0-9.!#$%&’*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$'
+    email_regex = r'^[a-zA-Z0-9.!#$%&\'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$'
     return re.match(email_regex, email_address) is not None
 
 
@@ -50,14 +50,42 @@ def has_valid_dkim(records: List[str]) -> bool:
     if not records:
         return False
     # Check for DKIM records (v=DKIM1 or contains DKIM-related content)
-    return any("v=dkim1" in record.lower() or "dkim" in record.lower() for record in records)
+    return any("v=dkim1" in record.lower() for record in records)
 
 
 def has_valid_dmarc(records: List[str]) -> bool:
-    """Check if DMARC records are valid."""
+    """Check if DMARC records are valid and have a reject policy."""
     if not records:
         return False
-    return any("v=dmarc1" in record.lower() for record in records)
+    
+    for record in records:
+        record_lower = record.lower()
+        # Check if it's a DMARC record
+        if "v=dmarc1" in record_lower:
+            # Check if it has a reject policy (most secure)
+            if "p=reject" in record_lower:
+                return True
+            # Also accept quarantine policy
+            elif "p=quarantine" in record_lower:
+                return True
+    return False
+
+
+def get_dmarc_policy(records: List[str]) -> str:
+    """Extract the DMARC policy from records."""
+    if not records:
+        return "none"
+    
+    for record in records:
+        record_lower = record.lower()
+        if "v=dmarc1" in record_lower:
+            if "p=reject" in record_lower:
+                return "reject"
+            elif "p=quarantine" in record_lower:
+                return "quarantine"
+            elif "p=none" in record_lower:
+                return "none"
+    return "none"
 
 
 # ----------------------------
@@ -164,8 +192,6 @@ def extract_links(html_content):
 # ----------------------------
 # Authenticity analyzer
 # ----------------------------
-
-
 def extract_dkim_info(msg) -> List[str]:
     """Extract DKIM selector(s) and domains from DKIM-Signature headers."""
     selectors = []
@@ -179,98 +205,130 @@ def extract_dkim_info(msg) -> List[str]:
     return selectors
 
 
-
 async def get_gmail_authenticity(raw_email_bytes: bytes):
     """
     Check SPF, DKIM, DMARC, Email Syntax, Domain, and MX records for a Gmail message.
     """
-    results = {"SPF": "", "DKIM": "", "DMARC": "", "MX": ""}  # Changed to empty strings
-    security_summary = {
-        "spf_status": "no_spf",
-        "dkim_status": "no_dkim",
-        "dmarc_status": "no_dmarc",
-        "overall_status": "untrustworthy"
-    }
-
     import email
     msg = email.message_from_bytes(raw_email_bytes)
     from_header = msg.get("From", "")
     domain = extract_domain(from_header)
 
+    # Initialize results with consistent structure
+    results = {
+        "domain": domain,
+        "email_syntax": validate_email_syntax(from_header),
+        "spf": {"status": "not_configured", "records": []},
+        "dkim": {"status": "not_configured", "records": []},
+        "dmarc": {"status": "not_configured", "policy": "none", "records": []},
+        "mx": {"status": "not_configured", "records": []},
+        "overall_status": "untrustworthy"
+    }
+
     # ---- Email Syntax ----
-    email_syntax_valid = validate_email_syntax(from_header)
-    results["Email Syntax"] = "Valid" if email_syntax_valid else "Invalid"
+    results["email_syntax"] = validate_email_syntax(from_header)
 
     # ---- DKIM check ----
     try:
         if dkim.verify(raw_email_bytes):
-            results["DKIM"] = "Pass"  # Changed from append to assignment
-            security_summary["dkim_status"] = "dkim_configured"
+            results["dkim"]["status"] = "pass"
+            results["dkim"]["records"] = ["DKIM verification passed"]
         else:
-            results["DKIM"] = "Fail"  # Changed from append to assignment
-            security_summary["dkim_status"] = "dkim_invalid"
+            results["dkim"]["status"] = "fail"
+            results["dkim"]["records"] = ["DKIM verification failed"]
     except Exception as e:
-        results["DKIM"] = f"Error: {str(e)}"  # Changed from append to assignment
-        security_summary["dkim_status"] = "dkim_invalid"
+        results["dkim"]["status"] = "error"
+        results["dkim"]["records"] = [f"Error: {str(e)}"]
 
-    # ---- SPF & DMARC ----
+    # ---- SPF lookup ----
     try:
-        # SPF lookup
         spf_records = await dns_lookup("TXT", domain)
+        results["spf"]["records"] = spf_records
+        
         if has_valid_spf(spf_records):
-            results["SPF"] = "Found SPF record"  # Changed from append to assignment
-            security_summary["spf_status"] = "spf_configured"
+            results["spf"]["status"] = "configured"
         else:
-            results["SPF"] = "No valid SPF record"  # Changed from append to assignment
-            security_summary["spf_status"] = "no_spf"
-
-        # DMARC lookup
-        dmarc_records = await dns_lookup("TXT", f"_dmarc.{domain}")
-        if has_valid_dmarc(dmarc_records):
-            results["DMARC"] = "Found DMARC record"  # Changed from append to assignment
-            security_summary["dmarc_status"] = "dmarc_reject"
-        else:
-            results["DMARC"] = "No valid DMARC record"  # Changed from append to assignment
-            security_summary["dmarc_status"] = "no_dmarc"
-
+            results["spf"]["status"] = "not_configured"
     except Exception as e:
-        results["SPF"] = f"Resolver error: {str(e)}"  # Changed from append to assignment
-        results["DMARC"] = f"Resolver error: {str(e)}"  # Changed from append to assignment
+        results["spf"]["status"] = "error"
+        results["spf"]["records"] = [f"Resolver error: {str(e)}"]
+
+    # ---- DMARC lookup ----
+    try:
+        dmarc_records = await dns_lookup("TXT", f"_dmarc.{domain}")
+        results["dmarc"]["records"] = dmarc_records
+        
+        dmarc_policy = get_dmarc_policy(dmarc_records)
+        results["dmarc"]["policy"] = dmarc_policy
+        
+        if dmarc_policy == "reject":
+            results["dmarc"]["status"] = "reject"
+        elif dmarc_policy == "quarantine":
+            results["dmarc"]["status"] = "quarantine"
+        elif dmarc_policy == "none":
+            results["dmarc"]["status"] = "none"
+        else:
+            results["dmarc"]["status"] = "not_configured"
+    except Exception as e:
+        results["dmarc"]["status"] = "error"
+        results["dmarc"]["records"] = [f"Resolver error: {str(e)}"]
 
     # ---- MX Record check ----
     try:
         mx_records = await dns_lookup("MX", domain)
+        results["mx"]["records"] = mx_records
+        
         if mx_records:
-            results["MX"] = "Valid MX record(s) found"  # Changed from append to assignment
+            results["mx"]["status"] = "configured"
         else:
-            results["MX"] = "No MX records found"  # Changed from append to assignment
+            results["mx"]["status"] = "not_configured"
     except Exception as e:
-        results["MX"] = f"MX lookup failed: {str(e)}"  # Changed from append to assignment
+        results["mx"]["status"] = "error"
+        results["mx"]["records"] = [f"MX lookup failed: {str(e)}"]
 
     # ---- Overall status ----
     if (
-        security_summary["spf_status"] == "spf_configured" and
-        security_summary["dkim_status"] == "dkim_configured" and
-        security_summary["dmarc_status"] == "dmarc_reject"
+        results["spf"]["status"] == "configured" and
+        results["dkim"]["status"] == "pass" and
+        results["dmarc"]["status"] == "reject"
     ):
-        security_summary["overall_status"] = "highly_trustworthy"
+        results["overall_status"] = "highly_trustworthy"
     elif (
-        security_summary["spf_status"] == "spf_configured" or
-        security_summary["dkim_status"] == "dkim_configured"
+        results["spf"]["status"] == "configured" or
+        results["dkim"]["status"] == "pass" or
+        results["dmarc"]["status"] == "reject" or
+        results["dmarc"]["status"] == "quarantine"
     ):
-        security_summary["overall_status"] = "moderately_trustworthy"
+        results["overall_status"] = "moderately_trustworthy"
     else:
-        security_summary["overall_status"] = "untrustworthy"
+        results["overall_status"] = "untrustworthy"
 
-    results["Domain"] = domain
-    results["Email Syntax"] = "Valid" if email_syntax_valid else "Invalid"
+    return results
 
-    return {
-        "results": results,
-        "security_summary": security_summary,
-    }
+# ----------------------------
+# Email body extractor
+# ----------------------------
+def get_email_parts(msg):
+    """Extract both HTML and plain text parts from an email message."""
+    html_body = None
+    text_body = None
 
+    if msg.is_multipart():
+        for part in msg.walk():
+            content_type = part.get_content_type()
+            if content_type == "text/html" and html_body is None:
+                html_body = part.get_payload(decode=True).decode(errors="ignore")
+            elif content_type == "text/plain" and text_body is None:
+                text_body = part.get_payload(decode=True).decode(errors="ignore")
+    else:
+        content_type = msg.get_content_type()
+        payload = msg.get_payload(decode=True).decode(errors="ignore")
+        if content_type == "text/html":
+            html_body = payload
+        else:
+            text_body = payload
 
+    return html_body, text_body
 
 
 # ----------------------------
@@ -284,7 +342,12 @@ async def analyze_gmail_message(raw_email: bytes) -> Dict[str, Any]:
     to_address = msg.get("To", "")
     subject = msg.get("Subject", "")
     date = msg.get("Date", "")
-    body = get_email_body(msg)
+    
+    # Extract both HTML and text parts
+    html_body, text_body = get_email_parts(msg)
+    
+    # Extract links from HTML content
+    links = extract_links(html_body) if html_body else []
 
     authenticity = await get_gmail_authenticity(raw_email)
 
@@ -295,6 +358,8 @@ async def analyze_gmail_message(raw_email: bytes) -> Dict[str, Any]:
             "subject": subject,
             "date": date,
         },
-        "body": body,
+        "body_html": html_body,
+        "body_text": text_body,
+        "links": links,
         "authenticity": authenticity,
     }
