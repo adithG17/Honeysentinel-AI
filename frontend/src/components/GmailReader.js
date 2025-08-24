@@ -1,11 +1,69 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import axios from "axios";
+import { w3cwebsocket as W3CWebSocket } from "websocket";
 
 function GmailAnalyzer() {
   const [emails, setEmails] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [requestId, setRequestId] = useState(null);
+  const [wsClient, setWsClient] = useState(null);
+  const [connectionStatus, setConnectionStatus] = useState("disconnected");
+
+  // Generate a unique request ID for cache busting
+  const generateRequestId = () => {
+    return Math.random().toString(36).substring(2, 15) + 
+           Math.random().toString(36).substring(2, 15);
+  };
+
+  // WebSocket connection management
+  useEffect(() => {
+    const client = new W3CWebSocket('ws://localhost:8000/ws/emails');
+    
+    client.onopen = () => {
+      console.log('WebSocket Client Connected');
+      setConnectionStatus("connected");
+    };
+    
+    client.onmessage = (message) => {
+      try {
+        const data = JSON.parse(message.data);
+        if (data.type === "email_update") {
+          // Update the specific email in our state
+          setEmails(prevEmails => {
+            const newEmails = [...prevEmails];
+            if (newEmails[data.email_id]) {
+              newEmails[data.email_id] = {
+                ...newEmails[data.email_id],
+                ...data.data
+              };
+            }
+            return newEmails;
+          });
+        }
+      } catch (error) {
+        console.error('Error processing WebSocket message:', error);
+      }
+    };
+    
+    client.onclose = () => {
+      console.log('WebSocket Client Disconnected');
+      setConnectionStatus("disconnected");
+    };
+    
+    client.onerror = (error) => {
+      console.error('WebSocket Client Error:', error);
+      setConnectionStatus("error");
+    };
+    
+    setWsClient(client);
+    
+    return () => {
+      client.close();
+    };
+  }, []);
 
   // Helper functions for DNS validation display
   const getStatusColor = (status) => {
@@ -97,11 +155,31 @@ function GmailAnalyzer() {
             {(authenticity.overall_status || 'untrustworthy').replace(/_/g, ' ').toUpperCase()}
           </span>
         </h4>
+        {authenticity.last_updated && (
+          <p style={{ fontSize: '12px', color: '#aaa', margin: 0 }}>
+            Last updated: {new Date(authenticity.last_updated * 1000).toLocaleTimeString()}
+          </p>
+        )}
+        {authenticity.request_id && (
+          <p style={{ fontSize: '10px', color: '#777', margin: '5px 0 0 0' }}>
+            Request ID: {authenticity.request_id}
+          </p>
+        )}
       </div>
     );
   };
 
   const renderDNSRecord = (type, title, authenticity) => {
+    if (!authenticity || !authenticity[type]) {
+      return (
+        <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#2a2a2a', borderRadius: '5px' }}>
+          <h5 style={{ margin: '0 0 10px 0', color: '#F44336' }}>
+            ❌ {title}: Data Not Available
+          </h5>
+        </div>
+      );
+    }
+    
     const data = authenticity[type];
     const statusConfig = getDNSStatusConfig(type, data.status);
     
@@ -170,20 +248,36 @@ function GmailAnalyzer() {
     );
   };
 
-    useEffect(() => {
+  const fetchEmails = useCallback(async (forceRefresh = false) => {
     setLoading(true);
-    axios
-      .get(`http://localhost:8000/analyze/gmail`)
-      .then((res) => {
-        setEmails(res.data.gmail_messages || []);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error(err);
-        setError("Failed to fetch Gmail messages.");
-        setLoading(false);
-      });
-  }, []);
+    setError(null);
+    
+    const newRequestId = generateRequestId();
+    if (forceRefresh) {
+      setRequestId(newRequestId);
+    }
+    
+    try {
+      const response = await axios.get(
+        `http://localhost:8000/analyze/gmail?t=${Date.now()}&rid=${forceRefresh ? newRequestId : requestId}`
+      );
+      
+      setEmails(response.data.gmail_messages || []);
+      setLastUpdated(Date.now());
+      if (forceRefresh) {
+        setCurrentIndex(0);
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Failed to fetch Gmail messages.");
+    } finally {
+      setLoading(false);
+    }
+  }, [requestId]);
+
+  useEffect(() => {
+    fetchEmails(true); // Force refresh on initial load
+  }, [fetchEmails]);
 
   const handlePrev = () => {
     if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
@@ -195,6 +289,14 @@ function GmailAnalyzer() {
 
   const handleOpenLink = (url) => {
     window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const handleRefresh = () => {
+    fetchEmails(true);
+  };
+
+  const handleSoftRefresh = () => {
+    fetchEmails(false);
   };
 
   const renderLinks = (links) => {
@@ -285,151 +387,6 @@ function GmailAnalyzer() {
     );
   };
 
-  const renderAttachment = (att, index) => {
-    const mime = att.mime_type;
-    const base64Url = `data:${mime};base64,${att.data_base64}`;
-
-    // 📄 PDF Preview
-    if (mime === "application/pdf") {
-      return (
-        <li
-          key={index}
-          style={{
-            marginBottom: "15px",
-            padding: "10px",
-            border: "1px solid #e0e0e0",
-            borderRadius: "4px",
-          }}
-        >
-          <strong>{att.filename}</strong> ({mime},{" "}
-          {Math.round(att.size / 1024)} KB)
-          <div style={{ margin: "10px 0", height: "500px" }}>
-            <object
-              data={base64Url}
-              type="application/pdf"
-              width="100%"
-              height="100%"
-              style={{ border: "1px solid #ccc" }}
-            >
-              <p>
-                Your browser doesn't support PDF preview.{" "}
-                <a href={base64Url} download={att.filename}>
-                  Download instead
-                </a>
-              </p>
-            </object>
-          </div>
-          <a
-            href={base64Url}
-            download={att.filename}
-            style={{
-              color: "#0066cc",
-              textDecoration: "none",
-              display: "inline-block",
-              marginTop: "10px",
-            }}
-          >
-            ⬇️ Download PDF
-          </a>
-        </li>
-      );
-    }
-
-    // 🖼️ Image Preview
-    if (mime.startsWith("image/")) {
-      return (
-        <li
-          key={index}
-          style={{
-            marginBottom: "15px",
-            padding: "10px",
-            border: "1px solid #e0e0e0",
-            borderRadius: "4px",
-          }}
-        >
-          <strong>{att.filename}</strong> ({mime})
-          <div style={{ margin: "10px 0" }}>
-            <img
-              src={base64Url}
-              alt={att.filename}
-              style={{
-                maxWidth: "100%",
-                maxHeight: "300px",
-                display: "block",
-                marginBottom: "10px",
-                border: "1px solid #ccc",
-              }}
-            />
-          </div>
-          <a
-            href={base64Url}
-            download={att.filename}
-            style={{ color: "#0066cc", textDecoration: "none" }}
-          >
-            ⬇️ Download
-          </a>
-        </li>
-      );
-    }
-
-    // 📜 Text Preview
-    if (mime.startsWith("text/")) {
-      return (
-        <li
-          key={index}
-          style={{
-            marginBottom: "15px",
-            padding: "10px",
-            border: "1px solid #e0e0e0",
-            borderRadius: "4px",
-          }}
-        >
-          <strong>{att.filename}</strong> ({mime})
-          <pre
-            style={{
-              background: "#f9f9f9",
-              padding: "10px",
-              maxHeight: "200px",
-              overflowY: "auto",
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {atob(att.data_base64)}
-          </pre>
-          <a
-            href={base64Url}
-            download={att.filename}
-            style={{ color: '#0066cc', textDecoration: 'none' }}
-          >
-            ⬇️ Download
-          </a>
-        </li>
-      );
-    }
-
-    // ❌ Unsupported File
-    return (
-      <li
-        key={index}
-        style={{
-          marginBottom: "15px",
-          padding: "10px",
-          border: "1px solid #e0e0e0",
-          borderRadius: "4px",
-        }}
-      >
-        <strong>{att.filename}</strong> ({mime})
-        <p>Unsupported file type for preview.</p>
-        <a
-          href={base64Url}
-          download={att.filename}
-        >
-          ⬇️ Download
-        </a>
-      </li>
-    );
-  };
-
   const currentEmail = emails[currentIndex];
 
   const styles = {
@@ -447,6 +404,10 @@ function GmailAnalyzer() {
       borderBottom: "2px solid #444",
       paddingBottom: "10px",
       marginBottom: "20px",
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      flexWrap: "wrap"
     },
     emailMeta: {
       backgroundColor: "#272727",
@@ -487,22 +448,124 @@ function GmailAnalyzer() {
       border: "none",
       borderRadius: "4px",
       cursor: "pointer",
+      margin: "5px"
     },
     buttonDisabled: { opacity: 0.5, cursor: "not-allowed" },
+    refreshButton: {
+      padding: "8px 16px",
+      backgroundColor: "#4CAF50",
+      color: "white",
+      border: "none",
+      borderRadius: "4px",
+      cursor: "pointer",
+      margin: "5px"
+    },
+    softRefreshButton: {
+      padding: "8px 16px",
+      backgroundColor: "#FF9800",
+      color: "white",
+      border: "none",
+      borderRadius: "4px",
+      cursor: "pointer",
+      margin: "5px"
+    },
+    connectionStatus: {
+      padding: "5px 10px",
+      borderRadius: "4px",
+      fontSize: "12px",
+      marginLeft: "10px"
+    }
+  };
+
+  const getConnectionStatusColor = () => {
+    switch(connectionStatus) {
+      case "connected": return "#4CAF50";
+      case "disconnected": return "#F44336";
+      case "error": return "#FF9800";
+      default: return "#9E9E9E";
+    }
   };
 
   return (
     <div style={styles.container}>
-      <h1 style={styles.header}>📧 Gmail Analyzer</h1>
+      <div style={styles.header}>
+        <h1>📧 Gmail Analyzer</h1>
+        <div>
+          <span style={{ 
+            ...styles.connectionStatus, 
+            backgroundColor: getConnectionStatusColor() 
+          }}>
+            WebSocket: {connectionStatus}
+          </span>
+          <button onClick={handleRefresh} style={styles.refreshButton}>
+            🔄 Hard Refresh
+          </button>
+          <button onClick={handleSoftRefresh} style={styles.softRefreshButton}>
+            ↻ Soft Refresh
+          </button>
+        </div>
+      </div>
 
-      {error && <p style={{ color: "red" }}>{error}</p>}
+      {error && (
+        <div style={{ color: "red", padding: "10px", backgroundColor: "#300", borderRadius: "5px", marginBottom: "15px" }}>
+          {error}
+          <button onClick={handleRefresh} style={{ marginLeft: "15px", padding: "5px 10px" }}>
+            Retry
+          </button>
+        </div>
+      )}
+      
+      {lastUpdated && (
+        <p style={{ color: "#aaa", fontSize: "14px", marginTop: "-15px", marginBottom: "20px" }}>
+          Last updated: {new Date(lastUpdated).toLocaleTimeString()}
+          {requestId && (
+            <span style={{ marginLeft: "15px", color: "#777" }}>
+              Request ID: {requestId}
+            </span>
+          )}
+        </p>
+      )}
 
       {loading ? (
-        <p>Loading emails...</p>
+        <div style={{ textAlign: "center", padding: "40px" }}>
+          <p>Loading emails...</p>
+          <div style={{ width: "100%", height: "4px", backgroundColor: "#333", margin: "20px auto" }}>
+            <div style={{ width: "70%", height: "100%", backgroundColor: "#0066cc", animation: "loading 1.5s infinite" }}></div>
+          </div>
+        </div>
       ) : emails.length === 0 ? (
         <p>No emails found</p>
       ) : (
         <div>
+          {/* Navigation */}
+          <div style={styles.navButtons}>
+            <button
+              onClick={handlePrev}
+              disabled={currentIndex === 0}
+              style={{
+                ...styles.button,
+                ...(currentIndex === 0 ? styles.buttonDisabled : {}),
+              }}
+            >
+              Previous
+            </button>
+            <span>
+              Email {currentIndex + 1} of {emails.length}
+            </span>
+            <button
+              onClick={handleNext}
+              disabled={currentIndex === emails.length - 1}
+              style={{
+                ...styles.button,
+                ...(currentIndex === emails.length - 1
+                  ? styles.buttonDisabled
+                  : {}),
+              }}
+            >
+              Next
+            </button>
+          </div>
+
           {/* Metadata */}
           <div style={styles.emailMeta}>
             <p>
@@ -600,20 +663,6 @@ function GmailAnalyzer() {
                   <li><strong>MX Records:</strong> Mail server configuration</li>
                 </ul>
               </div>
-            </div>
-          )}
-
-          {/* Attachments */}
-          {currentEmail?.attachments?.length > 0 && (
-            <div style={styles.contentBox}>
-              <h3 style={{ marginTop: 0 }}>
-                📎 Attachments ({currentEmail.attachments.length})
-              </h3>
-              <ul style={{ listStyle: "none", padding: 0 }}>
-                {currentEmail.attachments.map((att, index) =>
-                  renderAttachment(att, index)
-                )}
-              </ul>
             </div>
           )}
 

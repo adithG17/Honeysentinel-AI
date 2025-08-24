@@ -5,8 +5,18 @@ from urllib.parse import urlparse
 import dns.asyncresolver
 from email.utils import parseaddr
 from email import message_from_bytes
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
+import time
+import hashlib
+import json
+from datetime import datetime, timedelta
+from cachetools import TTLCache
 
+# ----------------------------
+# DNS Cache for Performance
+# ----------------------------
+# Cache DNS results for 5 minutes to avoid repeated lookups
+dns_cache = TTLCache(maxsize=1000, ttl=300)
 
 # ----------------------------
 # Helpers
@@ -18,25 +28,41 @@ def extract_domain(email_address: str) -> str:
         return ""
     return addr.split("@")[-1].lower()
 
-
 def validate_email_syntax(email_address: str) -> bool:
     """Validate email syntax using RFC 5322 regex."""
     email_regex = r'^[a-zA-Z0-9.!#$%&\'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$'
     return re.match(email_regex, email_address) is not None
 
-
-async def dns_lookup(record_type: str, name: str) -> List[str]:
-    """Perform DNS lookup for a given record type using reliable resolvers."""
+async def dns_lookup(record_type: str, name: str) -> Tuple[List[str], bool]:
+    """Perform DNS lookup with caching and improved error handling."""
+    cache_key = f"{record_type}:{name}"
+    
+    # Check cache first
+    if cache_key in dns_cache:
+        return dns_cache[cache_key]
+    
     resolver = dns.asyncresolver.Resolver()
-    resolver.nameservers = ["1.1.1.1", "8.8.8.8"]  # Cloudflare + Google
+    # Use multiple DNS resolvers for redundancy
+    resolver.nameservers = ["1.1.1.1", "8.8.8.8", "9.9.9.9"]
+    
     try:
-        answers = await resolver.resolve(name, record_type, lifetime=3.0)
-        return [str(r) for r in answers]
-    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer, dns.resolver.NoNameservers, dns.exception.Timeout):
-        return []
+        answers = await asyncio.wait_for(
+            resolver.resolve(name, record_type),
+            timeout=2.0
+        )
+        records = [str(r) for r in answers]
+        dns_cache[cache_key] = (records, True)
+        return records, True
+    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer, 
+            dns.resolver.NoNameservers, dns.exception.Timeout,
+            asyncio.TimeoutError):
+        # Cache negative results for shorter time (1 minute)
+        dns_cache[cache_key] = ([], False)
+        return [], False
     except Exception as e:
-        return [f"Lookup failed: {str(e)}"]
-
+        error_msg = [f"Lookup failed: {str(e)}"]
+        dns_cache[cache_key] = (error_msg, False)
+        return error_msg, False
 
 def has_valid_spf(records: List[str]) -> bool:
     """Check if SPF records are valid."""
@@ -44,14 +70,11 @@ def has_valid_spf(records: List[str]) -> bool:
         return False
     return any("v=spf1" in record.lower() for record in records)
 
-
 def has_valid_dkim(records: List[str]) -> bool:
     """Check if DKIM records are valid."""
     if not records:
         return False
-    # Check for DKIM records (v=DKIM1 or contains DKIM-related content)
     return any("v=dkim1" in record.lower() for record in records)
-
 
 def has_valid_dmarc(records: List[str]) -> bool:
     """Check if DMARC records are valid and have a reject policy."""
@@ -60,16 +83,12 @@ def has_valid_dmarc(records: List[str]) -> bool:
     
     for record in records:
         record_lower = record.lower()
-        # Check if it's a DMARC record
         if "v=dmarc1" in record_lower:
-            # Check if it has a reject policy (most secure)
             if "p=reject" in record_lower:
                 return True
-            # Also accept quarantine policy
             elif "p=quarantine" in record_lower:
                 return True
     return False
-
 
 def get_dmarc_policy(records: List[str]) -> str:
     """Extract the DMARC policy from records."""
@@ -87,7 +106,6 @@ def get_dmarc_policy(records: List[str]) -> str:
                 return "none"
     return "none"
 
-
 # ----------------------------
 # Email body extractor
 # ----------------------------
@@ -103,50 +121,6 @@ def get_email_body(msg) -> str:
     else:
         return msg.get_payload(decode=True).decode(errors="ignore")
     return ""
-
-
-# ----------------------------
-# Header-based authenticity
-# ----------------------------
-def parse_authentication_headers(msg) -> Dict[str, str]:
-    """Extract SPF, DKIM, DMARC results from Gmail headers if available."""
-    results = {"spf": "unknown", "dkim": "unknown", "dmarc": "unknown"}
-
-    # SPF: Gmail usually sets "Received-SPF"
-    spf_header = msg.get("Received-SPF")
-    if spf_header:
-        spf_header_lower = spf_header.lower()
-        if "pass" in spf_header_lower:
-            results["spf"] = "pass"
-        elif "fail" in spf_header_lower:
-            results["spf"] = "fail"
-        elif "softfail" in spf_header_lower:
-            results["spf"] = "softfail"
-        elif "neutral" in spf_header_lower:
-            results["spf"] = "neutral"
-
-    # DKIM/DMARC: Gmail sets "Authentication-Results"
-    auth_results = msg.get("Authentication-Results", "")
-    auth_results_lower = auth_results.lower()
-    
-    if auth_results:
-        # DKIM check
-        if "dkim=pass" in auth_results_lower:
-            results["dkim"] = "pass"
-        elif "dkim=fail" in auth_results_lower:
-            results["dkim"] = "fail"
-        elif "dkim=neutral" in auth_results_lower:
-            results["dkim"] = "neutral"
-
-        # DMARC check
-        if "dmarc=pass" in auth_results_lower:
-            results["dmarc"] = "pass"
-        elif "dmarc=fail" in auth_results_lower:
-            results["dmarc"] = "fail"
-        elif "dmarc=neutral" in auth_results_lower:
-            results["dmarc"] = "neutral"
-
-    return results
 
 
 def extract_links(html_content):
@@ -188,29 +162,14 @@ def extract_links(html_content):
 
     return links
 
-
 # ----------------------------
 # Authenticity analyzer
 # ----------------------------
-def extract_dkim_info(msg) -> List[str]:
-    """Extract DKIM selector(s) and domains from DKIM-Signature headers."""
-    selectors = []
-    for header in msg.get_all("DKIM-Signature", []):
-        selector_match = re.search(r"s=([^;]+)", header)
-        domain_match = re.search(r"d=([^;]+)", header)
-        if selector_match and domain_match:
-            selector = selector_match.group(1).strip()
-            domain = domain_match.group(1).strip()
-            selectors.append(f"{selector}._domainkey.{domain}")
-    return selectors
-
-
 async def get_gmail_authenticity(raw_email_bytes: bytes):
     """
     Check SPF, DKIM, DMARC, Email Syntax, Domain, and MX records for a Gmail message.
     """
-    import email
-    msg = email.message_from_bytes(raw_email_bytes)
+    msg = message_from_bytes(raw_email_bytes)
     from_header = msg.get("From", "")
     domain = extract_domain(from_header)
 
@@ -222,9 +181,16 @@ async def get_gmail_authenticity(raw_email_bytes: bytes):
         "dkim": {"status": "not_configured", "records": []},
         "dmarc": {"status": "not_configured", "policy": "none", "records": []},
         "mx": {"status": "not_configured", "records": []},
-        "overall_status": "untrustworthy"
+        "overall_status": "untrustworthy",
+        "last_updated": time.time(),
+        "request_id": hashlib.md5(f"{time.time()}{from_header}".encode()).hexdigest()[:12]
     }
 
+    # Run all DNS lookups in parallel
+    spf_task = asyncio.create_task(dns_lookup("TXT", domain))
+    dmarc_task = asyncio.create_task(dns_lookup("TXT", f"_dmarc.{domain}"))
+    mx_task = asyncio.create_task(dns_lookup("MX", domain))
+    
     # ---- Email Syntax ----
     results["email_syntax"] = validate_email_syntax(from_header)
 
@@ -242,7 +208,7 @@ async def get_gmail_authenticity(raw_email_bytes: bytes):
 
     # ---- SPF lookup ----
     try:
-        spf_records = await dns_lookup("TXT", domain)
+        spf_records, success = await spf_task
         results["spf"]["records"] = spf_records
         
         if has_valid_spf(spf_records):
@@ -255,7 +221,7 @@ async def get_gmail_authenticity(raw_email_bytes: bytes):
 
     # ---- DMARC lookup ----
     try:
-        dmarc_records = await dns_lookup("TXT", f"_dmarc.{domain}")
+        dmarc_records, success = await dmarc_task
         results["dmarc"]["records"] = dmarc_records
         
         dmarc_policy = get_dmarc_policy(dmarc_records)
@@ -275,7 +241,7 @@ async def get_gmail_authenticity(raw_email_bytes: bytes):
 
     # ---- MX Record check ----
     try:
-        mx_records = await dns_lookup("MX", domain)
+        mx_records, success = await mx_task
         results["mx"]["records"] = mx_records
         
         if mx_records:
@@ -296,8 +262,7 @@ async def get_gmail_authenticity(raw_email_bytes: bytes):
     elif (
         results["spf"]["status"] == "configured" or
         results["dkim"]["status"] == "pass" or
-        results["dmarc"]["status"] == "reject" or
-        results["dmarc"]["status"] == "quarantine"
+        results["dmarc"]["status"] in ["reject", "quarantine"]
     ):
         results["overall_status"] = "moderately_trustworthy"
     else:
@@ -329,7 +294,6 @@ def get_email_parts(msg):
             text_body = payload
 
     return html_body, text_body
-
 
 # ----------------------------
 # Main service
@@ -363,3 +327,40 @@ async def analyze_gmail_message(raw_email: bytes) -> Dict[str, Any]:
         "links": links,
         "authenticity": authenticity,
     }
+
+# ----------------------------
+# WebSocket support for real-time updates
+# ----------------------------
+class EmailAnalysisManager:
+    def __init__(self):
+        self.connected_clients = set()
+        self.email_cache = TTLCache(maxsize=100, ttl=3600)  # Cache emails for 1 hour
+    
+    async def broadcast_update(self, email_id, data):
+        """Broadcast updated email data to all connected clients."""
+        message = {
+            "type": "email_update",
+            "email_id": email_id,
+            "data": data
+        }
+        
+        for client in self.connected_clients:
+            try:
+                await client.send_json(message)
+            except Exception as e:
+                print(f"Error sending to client: {e}")
+                self.connected_clients.remove(client)
+    
+    def cache_email(self, email_id, data):
+        """Cache email data for faster retrieval."""
+        self.email_cache[email_id] = {
+            "data": data,
+            "timestamp": time.time()
+        }
+    
+    def get_cached_email(self, email_id):
+        """Get cached email data if available."""
+        return self.email_cache.get(email_id)
+
+# Global instance
+analysis_manager = EmailAnalysisManager()
