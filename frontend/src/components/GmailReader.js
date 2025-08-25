@@ -1,69 +1,103 @@
 import React, { useEffect, useState, useCallback } from "react";
 import axios from "axios";
-import { w3cwebsocket as W3CWebSocket } from "websocket";
 
 function GmailAnalyzer() {
   const [emails, setEmails] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState(null);
-  const [requestId, setRequestId] = useState(null);
-  const [wsClient, setWsClient] = useState(null);
-  const [connectionStatus, setConnectionStatus] = useState("disconnected");
+  const [authenticityData, setAuthenticityData] = useState({});
+  const [processingStatus, setProcessingStatus] = useState({});
 
-  // Generate a unique request ID for cache busting
-  const generateRequestId = () => {
-    return Math.random().toString(36).substring(2, 15) + 
-           Math.random().toString(36).substring(2, 15);
+  // Load emails on component mount
+  useEffect(() => {
+    loadEmails();
+  }, []);
+
+  const loadEmails = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await axios.get(`http://localhost:8000/analyze/gmail?max_results=10`);
+      setEmails(response.data.gmail_messages || []);
+      
+      // Initialize processing status
+      const initialStatus = {};
+      response.data.gmail_messages.forEach(email => {
+        initialStatus[email.id] = "pending";
+      });
+      setProcessingStatus(initialStatus);
+      
+      // Start processing authenticity for the first email
+      if (response.data.gmail_messages && response.data.gmail_messages.length > 0) {
+        fetchAuthenticityData(response.data.gmail_messages[0].id);
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Failed to load emails.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // WebSocket connection management
-  useEffect(() => {
-    const client = new W3CWebSocket('ws://localhost:8000/ws/emails');
+  const fetchAuthenticityData = async (emailId) => {
+    if (authenticityData[emailId] || processingStatus[emailId] === "processing") {
+      return; // Already fetched or being processed
+    }
     
-    client.onopen = () => {
-      console.log('WebSocket Client Connected');
-      setConnectionStatus("connected");
-    };
+    setProcessingStatus(prev => ({ ...prev, [emailId]: "processing" }));
     
-    client.onmessage = (message) => {
-      try {
-        const data = JSON.parse(message.data);
-        if (data.type === "email_update") {
-          // Update the specific email in our state
-          setEmails(prevEmails => {
-            const newEmails = [...prevEmails];
-            if (newEmails[data.email_id]) {
-              newEmails[data.email_id] = {
-                ...newEmails[data.email_id],
-                ...data.data
-              };
-            }
-            return newEmails;
-          });
-        }
-      } catch (error) {
-        console.error('Error processing WebSocket message:', error);
+    try {
+      const response = await axios.get(`http://localhost:8000/analyze/gmail/${emailId}/authenticity`);
+      
+      if (response.data.status === "processing") {
+        // If still processing, check again after a delay
+        setTimeout(() => fetchAuthenticityData(emailId), 1000);
+      } else {
+        // Store the result
+        setAuthenticityData(prev => ({ ...prev, [emailId]: response.data }));
+        setProcessingStatus(prev => ({ ...prev, [emailId]: "completed" }));
       }
-    };
-    
-    client.onclose = () => {
-      console.log('WebSocket Client Disconnected');
-      setConnectionStatus("disconnected");
-    };
-    
-    client.onerror = (error) => {
-      console.error('WebSocket Client Error:', error);
-      setConnectionStatus("error");
-    };
-    
-    setWsClient(client);
-    
-    return () => {
-      client.close();
-    };
-  }, []);
+    } catch (err) {
+      console.error("Failed to fetch authenticity data", err);
+      setProcessingStatus(prev => ({ ...prev, [emailId]: "error" }));
+    }
+  };
+
+  const handlePrev = () => {
+    if (currentIndex > 0) {
+      const newIndex = currentIndex - 1;
+      setCurrentIndex(newIndex);
+      
+      // Fetch authenticity data if not already available
+      const emailId = emails[newIndex]?.id;
+      if (emailId && !authenticityData[emailId] && processingStatus[emailId] !== "processing") {
+        fetchAuthenticityData(emailId);
+      }
+    }
+  };
+
+  const handleNext = () => {
+    if (currentIndex < emails.length - 1) {
+      const newIndex = currentIndex + 1;
+      setCurrentIndex(newIndex);
+      
+      // Fetch authenticity data if not already available
+      const emailId = emails[newIndex]?.id;
+      if (emailId && !authenticityData[emailId] && processingStatus[emailId] !== "processing") {
+        fetchAuthenticityData(emailId);
+      }
+    }
+  };
+
+  const handleOpenLink = (url) => {
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const handleRefresh = () => {
+    loadEmails();
+  };
 
   // Helper functions for DNS validation display
   const getStatusColor = (status) => {
@@ -85,7 +119,6 @@ function GmailAnalyzer() {
   };
 
   const getDNSStatusConfig = (type, status) => {
-    // Determine status based on type and status
     switch(type) {
       case 'spf':
         if (status === 'configured') {
@@ -183,7 +216,6 @@ function GmailAnalyzer() {
     const data = authenticity[type];
     const statusConfig = getDNSStatusConfig(type, data.status);
     
-    // Check if we have any valid content to show
     const hasContent = data.records && data.records.length > 0 && 
                       !data.records[0].includes("error") &&
                       !data.records[0].includes("No record");
@@ -248,57 +280,6 @@ function GmailAnalyzer() {
     );
   };
 
-  const fetchEmails = useCallback(async (forceRefresh = false) => {
-    setLoading(true);
-    setError(null);
-    
-    const newRequestId = generateRequestId();
-    if (forceRefresh) {
-      setRequestId(newRequestId);
-    }
-    
-    try {
-      const response = await axios.get(
-        `http://localhost:8000/analyze/gmail?t=${Date.now()}&rid=${forceRefresh ? newRequestId : requestId}`
-      );
-      
-      setEmails(response.data.gmail_messages || []);
-      setLastUpdated(Date.now());
-      if (forceRefresh) {
-        setCurrentIndex(0);
-      }
-    } catch (err) {
-      console.error(err);
-      setError("Failed to fetch Gmail messages.");
-    } finally {
-      setLoading(false);
-    }
-  }, [requestId]);
-
-  useEffect(() => {
-    fetchEmails(true); // Force refresh on initial load
-  }, [fetchEmails]);
-
-  const handlePrev = () => {
-    if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
-  };
-
-  const handleNext = () => {
-    if (currentIndex < emails.length - 1) setCurrentIndex(currentIndex + 1);
-  };
-
-  const handleOpenLink = (url) => {
-    window.open(url, "_blank", "noopener,noreferrer");
-  };
-
-  const handleRefresh = () => {
-    fetchEmails(true);
-  };
-
-  const handleSoftRefresh = () => {
-    fetchEmails(false);
-  };
-
   const renderLinks = (links) => {
     if (!links || links.length === 0) {
       return <p>No links found in this email</p>;
@@ -351,7 +332,6 @@ function GmailAnalyzer() {
                   {link.is_external ? "Proceed with caution!" : "Ok"}
                 </div>
 
-                {/* Actions */}
                 <button
                   onClick={() => handleOpenLink(link.url)}
                   style={{
@@ -388,6 +368,9 @@ function GmailAnalyzer() {
   };
 
   const currentEmail = emails[currentIndex];
+  const currentEmailId = currentEmail?.id;
+  const currentAuthenticity = currentEmailId ? authenticityData[currentEmailId] : null;
+  const isProcessing = currentEmailId ? processingStatus[currentEmailId] === "processing" : false;
 
   const styles = {
     container: {
@@ -432,8 +415,6 @@ function GmailAnalyzer() {
       marginBottom: "20px",
       border: "1px solid #444"
     },
-    statusWarning: { color: "#ffcc00", fontWeight: "bold" },
-    statusVerified: { color: "#4CAF50", fontWeight: "bold" },
     navButtons: {
       display: "flex",
       justifyContent: "center",
@@ -459,30 +440,6 @@ function GmailAnalyzer() {
       borderRadius: "4px",
       cursor: "pointer",
       margin: "5px"
-    },
-    softRefreshButton: {
-      padding: "8px 16px",
-      backgroundColor: "#FF9800",
-      color: "white",
-      border: "none",
-      borderRadius: "4px",
-      cursor: "pointer",
-      margin: "5px"
-    },
-    connectionStatus: {
-      padding: "5px 10px",
-      borderRadius: "4px",
-      fontSize: "12px",
-      marginLeft: "10px"
-    }
-  };
-
-  const getConnectionStatusColor = () => {
-    switch(connectionStatus) {
-      case "connected": return "#4CAF50";
-      case "disconnected": return "#F44336";
-      case "error": return "#FF9800";
-      default: return "#9E9E9E";
     }
   };
 
@@ -491,17 +448,8 @@ function GmailAnalyzer() {
       <div style={styles.header}>
         <h1>📧 Gmail Analyzer</h1>
         <div>
-          <span style={{ 
-            ...styles.connectionStatus, 
-            backgroundColor: getConnectionStatusColor() 
-          }}>
-            WebSocket: {connectionStatus}
-          </span>
           <button onClick={handleRefresh} style={styles.refreshButton}>
-            🔄 Hard Refresh
-          </button>
-          <button onClick={handleSoftRefresh} style={styles.softRefreshButton}>
-            ↻ Soft Refresh
+            🔄 Refresh
           </button>
         </div>
       </div>
@@ -514,23 +462,12 @@ function GmailAnalyzer() {
           </button>
         </div>
       )}
-      
-      {lastUpdated && (
-        <p style={{ color: "#aaa", fontSize: "14px", marginTop: "-15px", marginBottom: "20px" }}>
-          Last updated: {new Date(lastUpdated).toLocaleTimeString()}
-          {requestId && (
-            <span style={{ marginLeft: "15px", color: "#777" }}>
-              Request ID: {requestId}
-            </span>
-          )}
-        </p>
-      )}
 
       {loading ? (
         <div style={{ textAlign: "center", padding: "40px" }}>
           <p>Loading emails...</p>
           <div style={{ width: "100%", height: "4px", backgroundColor: "#333", margin: "20px auto" }}>
-            <div style={{ width: "70%", height: "100%", backgroundColor: "#0066cc", animation: "loading 1.5s infinite" }}></div>
+            <div style={{ width: "70%", height: "100%", backgroundColor: "#0066cc" }}></div>
           </div>
         </div>
       ) : emails.length === 0 ? (
@@ -621,50 +558,66 @@ function GmailAnalyzer() {
           </div>
 
           {/* Authenticity */}
-          {currentEmail?.authenticity && (
-            <div style={styles.authenticityBox}>
-              <h3 style={{ marginTop: 0 }}>🔍 Email Authenticity Check</h3>
-              
-              {/* Domain and Syntax Validation */}
-              <div style={{ marginBottom: '20px' }}>
-                <p><strong>Domain:</strong> {currentEmail.authenticity.domain}</p>
-                <p>
-                  <strong>Email Syntax:</strong> 
-                  <span style={{ 
-                    color: currentEmail.authenticity.email_syntax ? '#4CAF50' : '#F44336', 
-                    marginLeft: '8px' 
-                  }}>
-                    {currentEmail.authenticity.email_syntax ? '✅ Valid' : '❌ Invalid'}
-                  </span>
-                </p>
+          <div style={styles.authenticityBox}>
+            <h3 style={{ marginTop: 0 }}>🔍 Email Authenticity Check</h3>
+            
+            {isProcessing ? (
+              <div style={{ textAlign: "center", padding: "40px" }}>
+                <p>Checking authenticity...</p>
+                <div style={{ width: "100%", height: "4px", backgroundColor: "#333", margin: "20px auto" }}>
+                  <div style={{ width: "70%", height: "100%", backgroundColor: "#0066cc" }}></div>
+                </div>
               </div>
+            ) : currentAuthenticity ? (
+              <>
+                {/* Domain and Syntax Validation */}
+                <div style={{ marginBottom: '20px' }}>
+                  <p><strong>Domain:</strong> {currentAuthenticity.domain}</p>
+                  <p>
+                    <strong>Email Syntax:</strong> 
+                    <span style={{ 
+                      color: currentAuthenticity.email_syntax ? '#4CAF50' : '#F44336', 
+                      marginLeft: '8px' 
+                    }}>
+                      {currentAuthenticity.email_syntax ? '✅ Valid' : '❌ Invalid'}
+                    </span>
+                  </p>
+                </div>
 
-              {/* Overall Security Status */}
-              {renderSecurityStatus(currentEmail.authenticity)}
+                {/* Overall Security Status */}
+                {renderSecurityStatus(currentAuthenticity)}
 
-              {/* Individual DNS Records */}
-              {renderDNSRecord('spf', 'SPF Records', currentEmail.authenticity)}
-              {renderDNSRecord('dkim', 'DKIM Records', currentEmail.authenticity)}
-              {renderDNSRecord('dmarc', 'DMARC Records', currentEmail.authenticity)}
-              {renderDNSRecord('mx', 'MX Records', currentEmail.authenticity)}
+                {/* Individual DNS Records */}
+                {renderDNSRecord('spf', 'SPF Records', currentAuthenticity)}
+                {renderDNSRecord('dkim', 'DKIM Records', currentAuthenticity)}
+                {renderDNSRecord('dmarc', 'DMARC Records', currentAuthenticity)}
+                {renderDNSRecord('mx', 'MX Records', currentAuthenticity)}
 
-              {/* Security Explanation */}
-              <div style={{ 
-                marginTop: '20px', 
-                padding: '15px', 
-                backgroundColor: '#2a2a2a', 
-                borderRadius: '5px' 
-              }}>
-                <h5>🔒 Security Explanation:</h5>
-                <ul style={{ margin: '10px 0', paddingLeft: '20px' }}>
-                  <li><strong>SPF:</strong> Prevents email spoofing</li>
-                  <li><strong>DKIM:</strong> Ensures email integrity</li>
-                  <li><strong>DMARC:</strong> Policy for handling failed emails</li>
-                  <li><strong>MX Records:</strong> Mail server configuration</li>
-                </ul>
+                {/* Security Explanation */}
+                <div style={{ 
+                  marginTop: '20px', 
+                  padding: '15px', 
+                  backgroundColor: '#2a2a2a', 
+                  borderRadius: '5px' 
+                }}>
+                  <h5>🔒 Security Explanation:</h5>
+                  <ul style={{ margin: '10px 0', paddingLeft: '20px' }}>
+                    <li><strong>SPF:</strong> Prevents email spoofing</li>
+                    <li><strong>DKIM:</strong> Ensures email integrity</li>
+                    <li><strong>DMARC:</strong> Policy for handling failed emails</li>
+                    <li><strong>MX Records:</strong> Mail server configuration</li>
+                  </ul>
+                </div>
+              </>
+            ) : (
+              <div style={{ padding: '15px', backgroundColor: '#333', borderRadius: '5px', marginBottom: '20px' }}>
+                <h4 style={{ margin: '0 0 10px 0', color: '#FF6B6B' }}>❌ Authenticity Data Not Available</h4>
+                <button onClick={() => fetchAuthenticityData(currentEmailId)} style={styles.button}>
+                  Check Authenticity
+                </button>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Navigation */}
           <div style={styles.navButtons}>
