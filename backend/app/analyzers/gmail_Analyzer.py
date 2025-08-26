@@ -8,20 +8,10 @@ from email import message_from_bytes
 from typing import Dict, Any, List, Tuple
 import time
 import hashlib
-from fastapi import FastAPI, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI
 import json
 
 app = FastAPI()
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # React app address
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Store email data and authenticity results
 email_store = {
@@ -41,9 +31,25 @@ def extract_domain(email_address: str) -> str:
     return addr.split("@")[-1].lower()
 
 def validate_email_syntax(email_address: str) -> bool:
-    """Validate email syntax using RFC 5322 regex."""
+    """
+    Validate email syntax by first extracting the email from header format.
+    Returns True for valid email syntax, False otherwise.
+    """
+    # Extract email from header format (e.g., "Name <email@example.com>")
+    _, parsed_email = parseaddr(email_address)
+    
+    # If parseaddr couldn't extract an email, try the original string
+    if not parsed_email:
+        parsed_email = email_address.strip()
+    
+    # If still no email or no @ symbol, it's invalid
+    if not parsed_email or '@' not in parsed_email:
+        return False
+    
+    # Basic email regex validation
     email_regex = r'^[a-zA-Z0-9.!#$%&\'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$'
-    return re.match(email_regex, email_address) is not None
+    
+    return re.match(email_regex, parsed_email) is not None
 
 async def dns_lookup(record_type: str, name: str) -> Tuple[List[str], bool]:
     """Perform DNS lookup without caching."""
