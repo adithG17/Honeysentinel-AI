@@ -15,5 +15,5 @@ def analyze_message(message: str):
         "score": result['score'],
         "keywords_detected": keyword_hits,
         "honeytrap_risk": len(keyword_hits) > 1
-    } //updated basic logic
-    
+    } //updated basic logic in message analyzer 
+
