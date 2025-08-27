@@ -3,6 +3,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.app.routes import analyze
 
+
+app = FastAPI()
+
 app = FastAPI(
     title="HoneySentinel AI",
     description="Detects potential honey trap threats across social platforms, messages, audio, video, and more.",
@@ -20,9 +23,3 @@ app.add_middleware(
 )
 
 app.include_router(analyze.router)
-
-@app.get("/")
-async def root():
-    return {"message": "HoneySentinel AI is alive!"}
-
-#__all__ = ["router"]
