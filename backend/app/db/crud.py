@@ -1,15 +1,12 @@
 from sqlalchemy.orm import Session
-from . import models
+from . import models, schemas
+from datetime import datetime
 
-def save_analysis(db: Session, message: str, label: str, score: float, risk: bool, keywords: list):
-    db_message = models.AnalyzedMessage(
-        message=message,
-        label=label,
-        score=score,
-        risk=risk,
-        keywords=",".join(keywords)  # ✅ join keywords list into a string
-    )
-    db.add(db_message)
+def bulk_insert_domains(db: Session, domains: list[str]):
+    for d in domains:
+        if not db.query(models.Domain).filter(models.Domain.domain_name == d).first():
+            db.add(models.Domain(domain_name=d, updated_on=datetime.utcnow()))
     db.commit()
-    db.refresh(db_message)
-    return db_message
+
+def is_disposable(db: Session, domain: str) -> bool:
+    return db.query(models.Domain).filter(models.Domain.domain_name == domain).first() is not None
