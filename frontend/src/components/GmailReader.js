@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import "./GmailReader.css";
+import DomainChecker from "./GmailAnalyzer"; 
 
 function GmailAnalyzer() {
   const [emails, setEmails] = useState([]);
@@ -417,6 +418,8 @@ function GmailAnalyzer() {
                     </span>
                   </p>
                 </div>
+
+                <DomainChecker email={currentEmail?.metadata?.from} />
 
                 {renderSecurityStatus(currentAuthenticity)}
 

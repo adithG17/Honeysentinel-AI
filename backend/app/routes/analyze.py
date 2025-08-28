@@ -163,3 +163,4 @@ def check_domain(email: str, db: Session = Depends(get_db)):
     if crud.is_disposable(db, domain):
         return {"email": email, "domain": domain, "status": "Disposable email"}
     return {"email": email, "domain": domain, "status": "Legit email"}
+
