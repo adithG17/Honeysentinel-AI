@@ -325,3 +325,44 @@
   border-radius: 4px;
   cursor: pointer;
 }
+
+.domain-checker {
+  margin: 15px 0;
+  padding: 15px;
+  border-radius: 8px;
+  background-color: #2a2a2a;
+  border-left: 4px solid #007bff;
+}
+
+.domain-status {
+  padding: 10px;
+  border-radius: 6px;
+}
+
+.domain-legit {
+  background-color: #87f1a0;
+  border: 1px solid #c3e6cb;
+}
+
+.domain-disposable {
+  background-color: #f8d7da;
+  border: 1px solid #f5c6cb;
+}
+
+.status-legit {
+  color: #155724;
+  font-weight: bold;
+}
+
+.status-disposable {
+  color: #721c24;
+  font-weight: bold;
+}
+
+.domain-warning {
+  margin-top: 10px;
+  padding: 10px;
+  background-color: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 4px;
+}
