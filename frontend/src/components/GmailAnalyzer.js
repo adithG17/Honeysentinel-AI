@@ -48,14 +48,14 @@ function DomainChecker({ email }) {
       ) : domainData ? (
         <div className={`domain-status ${domainData.status === 'Legit email' ? 'domain-legit' : 'domain-disposable'}`}>
           <p>
-            <strong>Email:</strong> {domainData.email}
+            <strong>Email:</strong> <span style={{ color: 'black' }}>{domainData.email}</span>
           </p>
           <p>
-            <strong>Domain:</strong> {domainData.domain}
+            <strong>Domain:</strong> <span style={{ color: 'black' }}>{domainData.domain}</span>
           </p>
           <p>
             <strong>Status:</strong> 
-            <span className={domainData.status === 'Legit email' ? 'status-legit' : 'status-disposable'}>
+            <span style={{ color: 'black' }} className={domainData.status === 'Legit email' ? 'status-legit' : 'status-disposable'}>
               {domainData.status === 'Legit email' ? '✅ Legitimate Domain' : '❌ Disposable Email Domain'}
             </span>
           </p>
