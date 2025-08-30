@@ -306,6 +306,45 @@ function GmailAnalyzer() {
     );
   };
 
+  // Function to create a safe HTML document for the iframe
+  const createSafeEmailDocument = (htmlContent) => {
+    // Basic sanitization - you might want to use a library like DOMPurify for production
+    const cleanHtml = htmlContent
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      .replace(/on\w+="[^"]*"/g, '')
+      .replace(/on\w+='[^']*'/g, '')
+      .replace(/on\w+=\w+\(\)/g, '');
+    
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <base target="_blank">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body { 
+            font-family: Arial, sans-serif; 
+            padding: 15px; 
+            line-height: 1.5;
+            color: #333;
+            background-color: #fff;
+            margin: 0;
+            max-width: 100%;
+            overflow-wrap: break-word;
+          }
+          img { max-width: 100%; height: auto; }
+          a { color: #0066cc; }
+          table { max-width: 100%; border-collapse: collapse; }
+          * { max-width: 100%; }
+        </style>
+      </head>
+      <body>
+        ${cleanHtml}
+      </body>
+      </html>
+    `;
+  };
+
   const currentEmail = emails[currentIndex];
   const currentEmailId = currentEmail?.id;
   const currentAuthenticity = currentEmailId ? authenticityData[currentEmailId] : null;
@@ -380,10 +419,17 @@ function GmailAnalyzer() {
           <div className="content-box">
             <h3>📨 Email Content</h3>
             {currentEmail?.body_html ? (
-              <div
-                dangerouslySetInnerHTML={{ __html: currentEmail.body_html }}
-                className="email-content-html"
-              />
+              <div className="email-iframe-container">
+                <div className="iframe-warning">
+                  Email content isolated in iframe to prevent CSS conflicts
+                </div>
+                <iframe
+                  srcDoc={createSafeEmailDocument(currentEmail.body_html)}
+                  className="email-iframe"
+                  title="Email content"
+                  sandbox="allow-same-origin"
+                />
+              </div>
             ) : currentEmail?.body_text ? (
               <pre className="email-content-text">
                 {currentEmail.body_text}
