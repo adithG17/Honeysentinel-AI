@@ -197,3 +197,4 @@ credentials.json
 token.json
 
 Testing.py
+.env
