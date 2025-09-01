@@ -1,22 +1,28 @@
 import os
-import httpx
 from dotenv import load_dotenv
+import aiohttp
 
+# Load environment variables from .env
 load_dotenv()
 
-API_KEY = os.getenv("GSB_API_KEY")
-GSB_URL = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={API_KEY}"
+GSB_API_KEY = os.getenv("GSB_API_KEY")
+
+print("✅ linkscanner.py module loaded successfully!")
 
 async def scan_url_with_gsb(url: str) -> dict:
-    """
-    Scan a URL with Google Safe Browsing API.
-    Returns threat details if found, otherwise safe.
-    """
+    """Scan a URL with Google Safe Browsing API"""
+    print(f"🔍 Scanning URL: {url}")
+    
+    if not GSB_API_KEY:
+        print("❌ WARNING: GSB_API_KEY not found in environment variables!")
+        return {
+            "status": "error",
+            "details": ["GSB_API_KEY not configured"],
+        }
+    
+    gsb_url = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={GSB_API_KEY}"
     payload = {
-        "client": {
-            "clientId": "honeysentinel-ai",
-            "clientVersion": "1.0"
-        },
+        "client": {"clientId": "honeysentinel-ai", "clientVersion": "1.0"},
         "threatInfo": {
             "threatTypes": [
                 "MALWARE",
@@ -26,23 +32,28 @@ async def scan_url_with_gsb(url: str) -> dict:
             ],
             "platformTypes": ["ANY_PLATFORM"],
             "threatEntryTypes": ["URL"],
-            "threatEntries": [{"url": url}]
-        }
+            "threatEntries": [{"url": url}],
+        },
     }
 
-    async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.post(GSB_URL, json=payload)
-        data = resp.json()
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(gsb_url, json=payload) as resp:
+                data = await resp.json()
 
-        if data and "matches" in data:
-            return {
-                "url": url,
-                "status": "malicious",
-                "details": data["matches"]
-            }
-        else:
-            return {
-                "url": url,
-                "status": "safe",
-                "details": []
-            }
+                # Google returns {"matches": [...]} if threats are found
+                if "matches" in data:
+                    return {
+                        "status": "unsafe",
+                        "details": [m["threatType"] for m in data["matches"]],
+                    }
+                else:
+                    return {
+                        "status": "safe",
+                        "details": [],
+                    }
+    except Exception as e:
+        return {
+            "status": "error",
+            "details": [str(e)],
+        }
