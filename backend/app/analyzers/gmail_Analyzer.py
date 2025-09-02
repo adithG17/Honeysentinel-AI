@@ -1,4 +1,3 @@
-from pickle import GET
 import re
 import asyncio
 import dkim
@@ -9,11 +8,7 @@ from email import message_from_bytes
 from typing import Dict, Any, List, Tuple
 import time
 import hashlib
-from fastapi import FastAPI
-import json
 from backend.app.analyzers.LinkScanner import scan_url_with_gsb
-
-app = FastAPI()
 
 # Store email data and authenticity results
 email_store = {
@@ -25,7 +20,6 @@ email_store = {
 # ----------------------------
 # Helpers
 # ----------------------------
-print("✅ gmail_analyzer.py module loaded successfully!")
 
 def extract_domain(email_address: str) -> str:
     """Safely extract domain from an email address using parseaddr."""
@@ -39,18 +33,14 @@ def validate_email_syntax(email_address: str) -> bool:
     Validate email syntax by first extracting the email from header format.
     Returns True for valid email syntax, False otherwise.
     """
-    # Extract email from header format (e.g., "Name <email@example.com>")
     _, parsed_email = parseaddr(email_address)
     
-    # If parseaddr couldn't extract an email, try the original string
     if not parsed_email:
         parsed_email = email_address.strip()
     
-    # If still no email or no @ symbol, it's invalid
     if not parsed_email or '@' not in parsed_email:
         return False
     
-    # Basic email regex validation
     email_regex = r'^[a-zA-Z0-9.!#$%&\'*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$'
     
     return re.match(email_regex, parsed_email) is not None
@@ -147,8 +137,7 @@ def extract_links(html_content):
                         "fragment": parsed.fragment,
                     }
                 )
-        except Exception as e:
-            print(f"Error parsing URL {url}: {e}")
+        except Exception:
             continue
 
     return links
@@ -198,7 +187,6 @@ async def get_gmail_authenticity(raw_email_bytes: bytes):
         "request_id": hashlib.md5(f"{time.time()}{from_header}".encode()).hexdigest()[:12]
     }
 
-    # Run all DNS lookups in parallel
     spf_task = asyncio.create_task(dns_lookup("TXT", domain))
     dmarc_task = asyncio.create_task(dns_lookup("TXT", f"_dmarc.{domain}"))
     mx_task = asyncio.create_task(dns_lookup("MX", domain))
@@ -247,7 +235,7 @@ async def get_gmail_authenticity(raw_email_bytes: bytes):
         else:
             results["dmarc"]["status"] = "not_configured"
     except Exception as e:
-        results["dmarc"]["status"] = "error"
+        results["dmarc"]["status": "error"]
         results["dmarc"]["records"] = [f"Resolver error: {str(e)}"]
 
     # MX Record check
@@ -281,12 +269,8 @@ async def get_gmail_authenticity(raw_email_bytes: bytes):
 
     return results
 
-
-
 async def analyze_gmail_message(raw_email: bytes) -> Dict[str, Any]:
     """Extract email metadata + run link scanning"""
-    print("🔍 Starting email analysis...")
-    
     msg = message_from_bytes(raw_email)
     from_address = msg.get("From", "")
     to_address = msg.get("To", "")
@@ -294,54 +278,28 @@ async def analyze_gmail_message(raw_email: bytes) -> Dict[str, Any]:
     date = msg.get("Date", "")
     
     html_body, text_body = get_email_parts(msg)
-    print(f"📧 Email parts - HTML: {bool(html_body)}, Text: {bool(text_body)}")
-    
     links = extract_links(html_body) if html_body else []
-    print(f"🔗 Found {len(links)} links in email")
 
-    # --- Scan links with Google Safe Browsing ---
-    scanned_links = []  # Create a new list for scanned links
+    scanned_links = []
     
     if links:
-        print(f"🔄 Scanning {len(links)} links...")
         try:
-            # Create scanning tasks for each link
             tasks = [scan_url_with_gsb(link["url"]) for link in links]
             scan_results = await asyncio.gather(*tasks)
-            print(f"✅ Got {len(scan_results)} scan results")
             
-            # Create new link objects with scan results
             for i, (original_link, scan_result) in enumerate(zip(links, scan_results)):
-                # Create a new link dictionary with all original properties PLUS scan results
-                scanned_link = original_link.copy()  # Copy all original properties
+                scanned_link = original_link.copy()
                 scanned_link["scan_status"] = scan_result.get("status", "unknown")
                 scanned_link["scan_details"] = scan_result.get("details", [])
                 scanned_links.append(scanned_link)
                 
-                print(f"🔍 Link {i+1}: Status={scanned_link['scan_status']}, Details={scanned_link['scan_details']}")
-                
         except Exception as e:
-            print(f"❌ Error in scanning: {e}")
-            import traceback
-            traceback.print_exc()
-            # If scanning fails, keep original links without scan results
             scanned_links = links
             for link in scanned_links:
                 link["scan_status"] = "error"
                 link["scan_details"] = [str(e)]
     else:
-        print("ℹ️ No links found to scan")
         scanned_links = links
-
-    # Debug: Check final links structure
-    print("🎯 Final links being returned:")
-    for i, link in enumerate(scanned_links):
-        print(f"   Link {i+1}: {link.get('url', 'no_url')}")
-        print(f"     Keys: {list(link.keys())}")
-        print(f"     Has scan_status: {'scan_status' in link}")
-        print(f"     Has scan_details: {'scan_details' in link}")
-        if 'scan_status' in link:
-            print(f"     Scan status: {link['scan_status']}")
 
     return {
         "metadata": {
@@ -352,20 +310,16 @@ async def analyze_gmail_message(raw_email: bytes) -> Dict[str, Any]:
         },
         "body_html": html_body,
         "body_text": text_body,
-        "links": scanned_links,  # Use the new list with scan results
+        "links": scanned_links,
     }
 
 async def process_authenticity(email_index: int):
     """Process authenticity for a specific email."""
     try:
-        # This would be where you get the actual raw email data
-        # For demonstration, we'll assume it's stored somewhere
-        raw_email = b""  # This would be the actual raw email bytes
-        
+        raw_email = b""
         authenticity = await get_gmail_authenticity(raw_email)
         email_store["authenticity_results"][email_index] = authenticity
     except Exception as e:
         email_store["authenticity_results"][email_index] = {"error": str(e)}
     finally:
         email_store["processing_status"][email_index] = False
-

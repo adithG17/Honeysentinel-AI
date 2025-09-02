@@ -1,10 +1,11 @@
 from sqlalchemy.orm import Session
 from app.db.models import Domain
+from backend.app.analyzers.gmail_analyzer import extract_domain
 
 def check_domain(email: str, db: Session) -> dict:
     """Check if the domain of the email exists in the disposable/bad domains DB"""
     try:
-        domain = email.split("@")[-1].strip().lower()
+        domain = extract_domain(email)
     except Exception:
         return {"valid": False, "reason": "Invalid email format"}
 

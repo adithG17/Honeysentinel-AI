@@ -7,14 +7,9 @@ load_dotenv()
 
 GSB_API_KEY = os.getenv("GSB_API_KEY")
 
-print("✅ linkscanner.py module loaded successfully!")
-
 async def scan_url_with_gsb(url: str) -> dict:
     """Scan a URL with Google Safe Browsing API"""
-    print(f"🔍 Scanning URL: {url}")
-    
     if not GSB_API_KEY:
-        print("❌ WARNING: GSB_API_KEY not found in environment variables!")
         return {
             "status": "error",
             "details": ["GSB_API_KEY not configured"],

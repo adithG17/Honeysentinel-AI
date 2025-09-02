@@ -261,17 +261,37 @@ function GmailAnalyzer() {
   };
 
   const renderLinks = (links) => {
-    if (!links || links.length === 0) {
-      return <p>No links found in this email</p>;
-    }
+  if (!links || links.length === 0) {
+    return <p>No links found in this email</p>;
+  }
 
-    return (
-      <div className="links-container">
-        <h4>🔗 Links Found ({links.length})</h4>
-        <div className="links-warning-box">
-          <p>⚠️ Warning: Always verify links before opening. External links may be unsafe.</p>
-          <ul>
-            {links.map((link, index) => (
+  return (
+    <div className="links-container">
+      <h4>🔗 Links Found ({links.length})</h4>
+      <div className="links-warning-box">
+        <p>⚠️ Warning: Always verify links before opening. External links may be unsafe.</p>
+        <ul>
+          {links.map((link, index) => {
+            // Determine scan status color and icon
+            let scanStatusColor = "#666";
+            let scanStatusIcon = "❓";
+            let scanStatusText = "Unknown";
+            
+            if (link.scan_status === "safe") {
+              scanStatusColor = "#4CAF50";
+              scanStatusIcon = "✅";
+              scanStatusText = "Safe";
+            } else if (link.scan_status === "unsafe") {
+              scanStatusColor = "#F44336";
+              scanStatusIcon = "❌";
+              scanStatusText = "Unsafe";
+            } else if (link.scan_status === "error") {
+              scanStatusColor = "#FF9800";
+              scanStatusIcon = "⚠️";
+              scanStatusText = "Scan Error";
+            }
+            
+            return (
               <li key={index} className="link-item">
                 <div className="link-url">
                   <strong>URL:</strong> {link.url}
@@ -282,15 +302,30 @@ function GmailAnalyzer() {
                 <div className={link.is_external ? "link-external" : "link-internal"}>
                   {link.is_external ? "⚠️ External Link" : "✓ Internal Link"}
                 </div>
-                <div className="link-security">
-                  <strong>Security:</strong> {link.is_external ? "Proceed with caution!" : "Ok"}
+                
+                {/* Add scan status display */}
+                <div className="link-scan-status" style={{ color: scanStatusColor }}>
+                  <strong>{scanStatusIcon} Scan Status:</strong> {scanStatusText}
                 </div>
+                
+                {/* Add scan details display if available */}
+                {link.scan_details && link.scan_details.length > 0 && (
+                  <div className="link-scan-details">
+                    <strong>Scan Details:</strong>
+                    <ul>
+                      {link.scan_details.map((detail, detailIndex) => (
+                        <li key={detailIndex}>{detail}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 <button
                   onClick={() => handleOpenLink(link.url)}
                   className="link-button open-button"
+                  disabled={link.scan_status === "unsafe"} // Disable button for unsafe links
                 >
-                  Open Link
+                  {link.scan_status === "unsafe" ? "Unsafe Link" : "Open Link"}
                 </button>
                 <button
                   onClick={() => navigator.clipboard.writeText(link.url)}
@@ -299,13 +334,13 @@ function GmailAnalyzer() {
                   Copy Link
                 </button>
               </li>
-            ))}
-          </ul>
-        </div>
+            );
+          })}
+        </ul>
       </div>
-    );
-  };
-
+    </div>
+  );
+};
   // Function to create a safe HTML document for the iframe
   const createSafeEmailDocument = (htmlContent) => {
     // Basic sanitization - you might want to use a library like DOMPurify for production
