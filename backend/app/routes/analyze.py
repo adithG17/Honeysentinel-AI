@@ -13,7 +13,7 @@ from backend.app.services.image_analyzer import analyze_image
 from backend.app.services.audio_analyzer import analyze_audio
 from backend.app.services.video_analyzer import analyze_video
 from backend.app.services.gmail_reader import fetch_gmail_messages, fetch_gmail_raw_message
-from backend.app.analyzers.gmail_analyzer import analyze_gmail_message, get_gmail_authenticity, extract_links
+from backend.app.analyzers.gmail_analyzer import get_gmail_authenticity, extract_links
 from backend.app.services.email_reader import extract_email_content, extract_msg_content_fast
 from backend.app.db.database import get_db ,engine, SessionLocal
 from backend.app.db.init_db import init_db, load_domains
@@ -54,21 +54,26 @@ async def analyze_gmail(max_results: int = 10):
                 scanned_link["scan_details"] = scan_result.get("details", [])
                 scanned_links.append(scanned_link)
 
+            # Initialize authenticity storage for this email
+            authenticity_results[g["id"]] = {
+                "status": "pending",  # Change from None to "pending"
+                "data": None
+            }
+
             analyzed_gmails.append({
                 "id": g["id"],
                 "metadata": g["metadata"],
                 "body_html": g["body_html"],
                 "body_text": g["body_text"],
                 "attachments": g["attachments"],
-                "links": scanned_links,  # Use the scanned links instead!
-                "authenticity_ready": False
+                "links": scanned_links,
+                "authenticity_ready": True  # Change this to True
             })
 
         return {"gmail_messages": analyzed_gmails}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/analyze/gmail/{message_id}/authenticity")
 async def get_email_authenticity(message_id: str, background_tasks: BackgroundTasks):
@@ -171,33 +176,3 @@ def check_domain(email: str, db: Session = Depends(get_db)):
 async def scan_url(url: str):
     result = await scan_url_with_gsb(url)
     return result
-
-@router.get("/debug-links")
-async def debug_links():
-    """Debug endpoint to see raw link data"""
-    from backend.app.analyzers.LinkScanner import scan_url_with_gsb
-    
-    # Test the scanner directly
-    scan_result = await scan_url_with_gsb("https://www.google.com")
-    
-    # Create a test link structure similar to what your analyzer returns
-    test_link = {
-        "url": "https://www.google.com",
-        "domain": "www.google.com", 
-        "is_external": True,
-        "scheme": "https",
-        "path": "/",
-        "query": "",
-        "fragment": "",
-        "scan_status": scan_result.get("status", "unknown"),
-        "scan_details": scan_result.get("details", [])
-    }
-    
-    # Return both the raw scan result and the formatted link
-    return {
-        "raw_scan_result": scan_result,
-        "formatted_link": test_link,
-        "link_keys": list(test_link.keys()),
-        "has_scan_status": "scan_status" in test_link,
-        "has_scan_details": "scan_details" in test_link
-    }
