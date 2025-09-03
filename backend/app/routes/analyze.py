@@ -16,9 +16,10 @@ from backend.app.services.gmail_reader import fetch_gmail_messages, fetch_gmail_
 from backend.app.analyzers.gmail_analyzer import get_gmail_authenticity, extract_links
 from backend.app.services.email_reader import extract_email_content, extract_msg_content_fast
 from backend.app.db.database import get_db ,engine, SessionLocal
-from backend.app.db.init_db import init_db, load_domains
+from backend.app.db.init_db import init_db, load_disposable_domains,load_alias_domains 
 from backend.app.db import models, schemas, crud
 from backend.app.analyzers.LinkScanner import scan_url_with_gsb
+from backend.app.analyzers.gmail_analyzer1 import check_domain as comprehensive_check
 
 
 router = APIRouter()
@@ -161,16 +162,19 @@ def on_startup():
     init_db()
 
 @router.get("/load-domains")
-def load_disposable_domains():
-    load_domains()
+def load_domains():
+    load_disposable_domains()
+    load_alias_domains()
     return {"message": "Domains loaded successfully!"}
 
 @router.get("/check-domain/{email}")
 def check_domain(email: str, db: Session = Depends(get_db)):
-    domain = email.split("@")[-1]
-    if crud.is_disposable(db, domain):
-        return {"email": email, "domain": domain, "status": "Disposable email"}
-    return {"email": email, "domain": domain, "status": "Legit email"}
+    """
+    Comprehensive domain analysis including disposable check, alias check, and WHOIS information
+    """
+    result = comprehensive_check(email, db)
+    return result
+
 
 @router.get("/scan-url/")
 async def scan_url(url: str):
