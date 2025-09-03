@@ -5,6 +5,7 @@ function DomainChecker({ email }) {
   const [domainData, setDomainData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showWhois, setShowWhois] = useState(false);
 
   useEffect(() => {
     if (email) {
@@ -24,6 +25,64 @@ function DomainChecker({ email }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const renderWhoisInfo = () => {
+    if (!domainData?.whois_info) return null;
+
+    const whoisData = domainData.whois_info;
+
+    if (!whoisData.success) {
+      return (
+        <div className="whois-error">
+          <p><strong>WHOIS Lookup:</strong> Failed - {whoisData.error}</p>
+        </div>
+      );
+    }
+
+    const data = whoisData.data;
+    return (
+      <div className="whois-details">
+        <h5>🌐 WHOIS Information</h5>
+        
+        {data.registrar && (
+          <p><strong>Registrar:</strong> {data.registrar}</p>
+        )}
+        
+        {data.creation_date && (
+          <p><strong>Registered:</strong> {data.creation_date}</p>
+        )}
+        
+        {domainData.domain_age_years && (
+          <p>
+            <strong>Domain Age:</strong> 
+            <span className={domainData.domain_age_years > 1 ? 'domain-old' : 'domain-new'}>
+              {domainData.domain_age_years} years ({domainData.domain_age_analysis})
+            </span>
+          </p>
+        )}
+        
+        {data.expiration_date && (
+          <p><strong>Expires:</strong> {data.expiration_date}</p>
+        )}
+        
+        {data.name_servers && data.name_servers.length > 0 && (
+          <p><strong>Name Servers:</strong> {data.name_servers.slice(0, 2).join(', ')}</p>
+        )}
+        
+        {data.status && (
+          <p><strong>Status:</strong> {Array.isArray(data.status) ? data.status.join(', ') : data.status}</p>
+        )}
+        
+        {data.country && (
+          <p><strong>Country:</strong> {data.country}</p>
+        )}
+        
+        {data.org && (
+          <p><strong>Organization:</strong> {data.org}</p>
+        )}
+      </div>
+    );
   };
 
   if (!email) return null;
@@ -48,22 +107,34 @@ function DomainChecker({ email }) {
       ) : domainData ? (
         <div className={`domain-status ${domainData.status === 'Legit email' ? 'domain-legit' : 'domain-disposable'}`}>
           <p>
-            <strong>Email:</strong> <span style={{ color: 'black' }}>{domainData.email}</span>
+            <strong>Email:</strong> <span className="domain-info">{domainData.email}</span>
           </p>
           <p>
-            <strong>Domain:</strong> <span style={{ color: 'black' }}>{domainData.domain}</span>
+            <strong>Domain:</strong> <span className="domain-info">{domainData.domain}</span>
           </p>
           <p>
             <strong>Status:</strong> 
-            <span style={{ color: 'black' }} className={domainData.status === 'Legit email' ? 'status-legit' : 'status-disposable'}>
+            <span className={domainData.status === 'Legit email' ? 'status-legit' : 'status-disposable'}>
               {domainData.status === 'Legit email' ? '✅ Legitimate Domain' : '❌ Disposable Email Domain'}
             </span>
           </p>
+          
           {domainData.status !== 'Legit email' && (
             <div className="domain-warning">
               <p>⚠️ This email comes from a disposable email service. Exercise caution when interacting with this sender.</p>
             </div>
           )}
+
+          {/* WHOIS Toggle Button */}
+          <button 
+            onClick={() => setShowWhois(!showWhois)} 
+            className="whois-toggle-button"
+          >
+            {showWhois ? '▲ Hide WHOIS Details' : '▼ Show WHOIS Details'}
+          </button>
+
+          {/* WHOIS Information */}
+          {showWhois && renderWhoisInfo()}
         </div>
       ) : null}
     </div>
@@ -71,4 +142,3 @@ function DomainChecker({ email }) {
 }
 
 export default DomainChecker;
-

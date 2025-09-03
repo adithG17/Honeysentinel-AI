@@ -16,3 +16,5 @@ def is_disposable(db: Session, domain: str) -> bool:
     result = db.query(models.Domain).filter(models.Domain.domain_name == domain).first()
     return result is not None
 
+def is_alias(db: Session, domain: str) -> bool:
+    return db.query(models.AliasDomain).filter(models.AliasDomain.domain_name == domain).first() is not None
