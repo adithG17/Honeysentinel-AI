@@ -197,3 +197,8 @@ credentials.json
 token.json
 
 Testing.py
+
+*.csv
+*.pkl
+*.txt
+*.lst
