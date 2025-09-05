@@ -2,7 +2,7 @@ import joblib
 import re
 
 # Reload model
-model = joblib.load("url_model.pkl")
+model = joblib.load("C:\\Users\\adhit\\OneDrive\\Documents\\Visual studio Codes\\Codes\\Python\\Honeysentinel-AI\\backend\\app\\ML\\url_classifier\\url_model.pkl")
 
 # Feature extraction (reuse function)
 def extract_features(url):
