@@ -260,10 +260,28 @@ function GmailAnalyzer() {
     );
   };
 
-  const renderLinks = (links) => {
+const renderLinks = (links) => {
   if (!links || links.length === 0) {
     return <p>No links found in this email</p>;
   }
+
+  // Function to send feedback to backend
+  const handleFeedback = async (url, feedback) => {
+    try {
+      const response = await fetch("http://localhost:8000/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, label: feedback }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to send feedback");
+      }
+      alert(`Feedback sent: ${feedback}`);
+    } catch (error) {
+      console.error("Error sending feedback:", error);
+    }
+  };
 
   return (
     <div className="links-container">
@@ -276,7 +294,7 @@ function GmailAnalyzer() {
             let scanStatusColor = "#666";
             let scanStatusIcon = "❓";
             let scanStatusText = "Unknown";
-            
+
             if (link.scan_status === "safe") {
               scanStatusColor = "#4CAF50";
               scanStatusIcon = "✅";
@@ -290,7 +308,7 @@ function GmailAnalyzer() {
               scanStatusIcon = "⚠️";
               scanStatusText = "Scan Error";
             }
-            
+
             return (
               <li key={index} className="link-item">
                 <div className="link-url">
@@ -302,13 +320,13 @@ function GmailAnalyzer() {
                 <div className={link.is_external ? "link-external" : "link-internal"}>
                   {link.is_external ? "⚠️ External Link" : "✓ Internal Link"}
                 </div>
-                
-                {/* Add scan status display */}
+
+                {/* Scan status */}
                 <div className="link-scan-status" style={{ color: scanStatusColor }}>
                   <strong>{scanStatusIcon} Scan Status:</strong> {scanStatusText}
                 </div>
-                
-                {/* Add scan details display if available */}
+
+                {/* Scan details */}
                 {link.scan_details && link.scan_details.length > 0 && (
                   <div className="link-scan-details">
                     <strong>Scan Details:</strong>
@@ -320,6 +338,7 @@ function GmailAnalyzer() {
                   </div>
                 )}
 
+                {/* Buttons */}
                 <button
                   onClick={() => handleOpenLink(link.url)}
                   className="link-button open-button"
@@ -333,6 +352,18 @@ function GmailAnalyzer() {
                 >
                   Copy Link
                 </button>
+
+                {/* Feedback dropdown */}
+                <div className="link-feedback">
+                  <label>Feedback: </label>
+                  <select onChange={(e) => handleFeedback(link.url, e.target.value)}>
+                    <option value="">Select</option>
+                    <option value="safe">Safe</option>
+                    <option value="marketing">Marketing</option>
+                    <option value="phishing">Phishing</option>
+                    <option value="scam">Scam</option>
+                  </select>
+                </div>
               </li>
             );
           })}
@@ -341,6 +372,7 @@ function GmailAnalyzer() {
     </div>
   );
 };
+
   // Function to create a safe HTML document for the iframe
   const createSafeEmailDocument = (htmlContent) => {
     // Basic sanitization - you might want to use a library like DOMPurify for production

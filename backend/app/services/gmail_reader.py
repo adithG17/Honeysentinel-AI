@@ -1,5 +1,6 @@
 import os
 import base64
+import re
 from email import message_from_bytes
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -158,3 +159,14 @@ def fetch_gmail_messages(max_results=10):
         })
 
     return gmails
+
+def extract_features(url):
+    features = {}
+    features["url_length"] = len(url)
+    features["num_dots"] = url.count(".")
+    features["has_https"] = 1 if url.startswith("https") else 0
+    features["has_login"] = 1 if "login" in url.lower() else 0
+    features["has_verify"] = 1 if "verify" in url.lower() else 0
+    features["has_secure"] = 1 if "secure" in url.lower() else 0
+    features["is_ip"] = 1 if re.match(r"^https?://\d+\.\d+\.\d+\.\d+", url) else 0
+    return features

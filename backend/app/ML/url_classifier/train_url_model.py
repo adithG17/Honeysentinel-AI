@@ -1,22 +1,13 @@
+
+# Train a URL classification model using RandomForest that can classify URLs as benign or malicious and save it as url_model.pkl
+
 import pandas as pd
-import re
-from urllib.parse import urlparse
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report
 import joblib
 
-# -------- Feature Extraction --------
-def extract_features(url):
-    features = {}
-    features["url_length"] = len(url)
-    features["num_dots"] = url.count(".")
-    features["has_https"] = 1 if url.startswith("https") else 0
-    features["has_login"] = 1 if "login" in url.lower() else 0
-    features["has_verify"] = 1 if "verify" in url.lower() else 0
-    features["has_secure"] = 1 if "secure" in url.lower() else 0
-    features["is_ip"] = 1 if re.match(r"^https?://\d+\.\d+\.\d+\.\d+", url) else 0
-    return features
+from backend.app.services.gmail_reader import extract_features
 
 # -------- Load Data --------
 df = pd.read_csv("data/urls.csv")

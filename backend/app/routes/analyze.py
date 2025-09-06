@@ -18,8 +18,11 @@ from backend.app.services.email_reader import extract_email_content, extract_msg
 from backend.app.db.database import get_db ,engine, SessionLocal
 from backend.app.db.init_db import init_db, load_disposable_domains,load_alias_domains 
 from backend.app.db import models, schemas, crud
-from backend.app.analyzers.LinkScanner import scan_url_with_gsb
+from backend.app.analyzers.LinkScanner import scan_url_hybrid
 from backend.app.analyzers.gmail_analyzer1 import check_domain as comprehensive_check
+from backend.app.ML.url_classifier.training.db import insert_or_update_link, set_label_by_id, set_label_by_url, init_db_url_trainer
+from backend.app.ML.url_classifier.training.auto_label import auto_label_url, domain_of
+
 
 
 router = APIRouter()
@@ -49,10 +52,21 @@ async def analyze_gmail(max_results: int = 10):
             # Scan each link individually
             scanned_links = []
             for link in links:
-                scan_result = await scan_url_with_gsb(link["url"])
+                url = link["url"]
+                domain = link.get("domain") or domain_of(url)
+                auto_label = auto_label_url(url)
+                # store link for training + counting
+                insert_or_update_link(url=url, domain=domain, source_email=g.get("id"), subject=g.get("metadata", {}).get("subject"), auto_label=auto_label)
+                scan_result = await scan_url_hybrid(link["url"])
                 scanned_link = link.copy()
-                scanned_link["scan_status"] = scan_result.get("status", "unknown")
-                scanned_link["scan_details"] = scan_result.get("details", [])
+                scanned_link["scan_details"] = {
+                                                "ml_status": scan_result.get("ml_status"),
+                                                "ml_confidence": scan_result.get("ml_confidence"),
+                                                "gsb_status": scan_result.get("gsb_status"),
+                                                "gsb_details": scan_result.get("gsb_details", [])
+                                                }
+                
+                scanned_link["scan_status"] = scan_result.get("final_status", "unknown")
                 scanned_links.append(scanned_link)
 
             # Initialize authenticity storage for this email
@@ -160,6 +174,7 @@ async def analyze_video_route(file: UploadFile = File(...)):
 @router.on_event("startup")
 def on_startup():
     init_db()
+    init_db_url_trainer()
 
 @router.get("/load-domains")
 def load_domains():
@@ -178,5 +193,20 @@ def check_domain(email: str, db: Session = Depends(get_db)):
 
 @router.get("/scan-url/")
 async def scan_url(url: str):
-    result = await scan_url_with_gsb(url)
+    result = await scan_url_hybrid(url)
     return result
+
+class Feedback(BaseModel):
+    id: int = None
+    url: str = None
+    label: str
+
+@router.post("/feedback")
+def feedback(feedback: Feedback):
+    if not feedback.id and not feedback.url:
+        raise HTTPException(400, "Provide id or url")
+    if feedback.id:
+        set_label_by_id(feedback.id, feedback.label)
+    else:
+        set_label_by_url(feedback.url, feedback.label)
+    return {"status": "ok"}
