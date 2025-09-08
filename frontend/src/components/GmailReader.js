@@ -10,10 +10,16 @@ function GmailAnalyzer() {
   const [loading, setLoading] = useState(true);
   const [authenticityData, setAuthenticityData] = useState({});
   const [processingStatus, setProcessingStatus] = useState({});
+  const [feedbackSelections, setFeedbackSelections] = useState({});
 
   useEffect(() => {
     loadEmails();
   }, []);
+  
+  // Reset feedback selections when current email changes
+  useEffect(() => {
+    setFeedbackSelections({});
+  }, [currentIndex]);
 
   const loadEmails = async () => {
     setLoading(true);
@@ -39,6 +45,8 @@ function GmailAnalyzer() {
       setLoading(false);
     }
   };
+
+
 
   const fetchAuthenticityData = async (emailId) => {
     if (authenticityData[emailId] || processingStatus[emailId] === "processing") {
@@ -92,6 +100,31 @@ function GmailAnalyzer() {
 
   const handleRefresh = () => {
     loadEmails();
+  };
+  
+  // Handle feedback for links
+  const handleFeedback = async (url, feedback) => {
+    try {
+      const response = await fetch("http://localhost:8000/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, label: feedback }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to send feedback");
+      }
+      
+      // Update the feedback selection state
+      setFeedbackSelections(prev => ({
+        ...prev,
+        [url]: feedback
+      }));
+      
+      alert(`Feedback sent: ${feedback}`);
+    } catch (error) {
+      console.error("Error sending feedback:", error);
+    }
   };
 
   const getStatusColor = (status) => {
@@ -265,24 +298,6 @@ const renderLinks = (links) => {
     return <p>No links found in this email</p>;
   }
 
-  // Function to send feedback to backend
-  const handleFeedback = async (url, feedback) => {
-    try {
-      const response = await fetch("http://localhost:8000/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, label: feedback }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to send feedback");
-      }
-      alert(`Feedback sent: ${feedback}`);
-    } catch (error) {
-      console.error("Error sending feedback:", error);
-    }
-  };
-
   return (
     <div className="links-container">
       <h4>🔗 Links Found ({links.length})</h4>
@@ -290,7 +305,6 @@ const renderLinks = (links) => {
         <p>⚠️ Warning: Always verify links before opening. External links may be unsafe.</p>
         <ul>
           {links.map((link, index) => {
-            // Determine scan status color and icon
             let scanStatusColor = "#666";
             let scanStatusIcon = "❓";
             let scanStatusText = "Unknown";
@@ -321,12 +335,10 @@ const renderLinks = (links) => {
                   {link.is_external ? "⚠️ External Link" : "✓ Internal Link"}
                 </div>
 
-                {/* Scan status */}
                 <div className="link-scan-status" style={{ color: scanStatusColor }}>
                   <strong>{scanStatusIcon} Scan Status:</strong> {scanStatusText}
                 </div>
 
-                {/* Scan details */}
                 {link.scan_details && link.scan_details.length > 0 && (
                   <div className="link-scan-details">
                     <strong>Scan Details:</strong>
@@ -338,11 +350,10 @@ const renderLinks = (links) => {
                   </div>
                 )}
 
-                {/* Buttons */}
                 <button
                   onClick={() => handleOpenLink(link.url)}
                   className="link-button open-button"
-                  disabled={link.scan_status === "unsafe"} // Disable button for unsafe links
+                  disabled={link.scan_status === "unsafe"}
                 >
                   {link.scan_status === "unsafe" ? "Unsafe Link" : "Open Link"}
                 </button>
@@ -353,16 +364,24 @@ const renderLinks = (links) => {
                   Copy Link
                 </button>
 
-                {/* Feedback dropdown */}
                 <div className="link-feedback">
                   <label>Feedback: </label>
-                  <select onChange={(e) => handleFeedback(link.url, e.target.value)}>
+                  <select
+                    value={feedbackSelections[link.url] || ""}
+                    onChange={(e) => handleFeedback(link.url, e.target.value)}
+                  >
                     <option value="">Select</option>
                     <option value="safe">Safe</option>
                     <option value="marketing">Marketing</option>
                     <option value="phishing">Phishing</option>
                     <option value="scam">Scam</option>
                   </select>
+
+                  {feedbackSelections[link.url] && (
+                    <span className="feedback-confirmation">
+                      ✓ Saved as {feedbackSelections[link.url]}
+                    </span>
+                  )}
                 </div>
               </li>
             );
@@ -373,6 +392,8 @@ const renderLinks = (links) => {
   );
 };
 
+
+  
   // Function to create a safe HTML document for the iframe
   const createSafeEmailDocument = (htmlContent) => {
     // Basic sanitization - you might want to use a library like DOMPurify for production
